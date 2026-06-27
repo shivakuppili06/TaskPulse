@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import { useToast } from '../components/Toast.jsx';
 import styles from './TodoDetailPage.module.css';
 
 const PRIORITY_CONFIG = {
@@ -39,6 +40,7 @@ function dueBadge(dueDate, completed) {
 export default function TodoDetailPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const id = params.get('id');
 
   const [todo, setTodo] = useState(null);
@@ -76,7 +78,8 @@ export default function TodoDetailPage() {
       const res = await api.patch(id, { notes });
       setTodo(res.data);
       setEditingNotes(false);
-    } catch (e) { setError(e.message); }
+      toast('Notes saved', 'success');
+    } catch (e) { setError(e.message); toast(e.message, 'error'); }
     finally { setSaving(false); }
   }
 
@@ -114,8 +117,9 @@ export default function TodoDetailPage() {
     if (!confirm('Delete this task permanently?')) return;
     try {
       await api.delete(id);
+      toast('Task deleted', 'success');
       navigate('/');
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); toast(e.message, 'error'); }
   }
 
   if (loading) return (

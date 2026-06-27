@@ -1,7 +1,7 @@
 {
   "name": "todo-backend",
-  "version": "1.0.0",
-  "description": "Express backend for Todo app",
+  "version": "2.0.0",
+  "description": "Express backend for Taska Todo app",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -10,6 +10,9 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {

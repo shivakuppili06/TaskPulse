@@ -24,4 +24,6 @@ export const api = {
   delete: (id) => request(`${BASE}/${id}`, { method: 'DELETE' }),
   deleteMany: (ids) => request(BASE, { method: 'DELETE', body: JSON.stringify({ ids }) }),
   clearCompleted: () => request(BASE, { method: 'DELETE', body: JSON.stringify({}) }),
+  getStats: () => request('/api/stats'),
+  getActivity: () => request(`${BASE}/activity`),
 };
