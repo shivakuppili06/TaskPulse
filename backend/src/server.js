@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -35,4 +36,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+const server = app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+
+// Graceful shutdown
+function shutdown(signal) {
+  console.log(`\n${signal} received — shutting down gracefully…`);
+  server.close(() => {
+    console.log('✓ HTTP server closed');
+    process.exit(0);
+  });
+  // Force exit after 5s if connections linger
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

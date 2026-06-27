@@ -1,6 +1,9 @@
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import styles from './TodoItem.module.css';
 
 const PRIORITY_LABELS = { high: '↑ High', medium: '→ Med', low: '↓ Low' };
+const REPEAT_LABELS = { daily: '↻ Daily', weekly: '↻ Weekly', monthly: '↻ Monthly' };
 
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -20,15 +23,46 @@ export default function TodoItem({ todo, selected, onSelect, onToggle, onEdit, o
   const subtasksTotal = todo.subtasks?.length || 0;
   const progress = subtasksTotal ? Math.round((subtasksDone / subtasksTotal) * 100) : 0;
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: todo.id });
+
+  const dragStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 999 : 'auto',
+    ...style,
+  };
+
   return (
     <div
-      className={`${styles.item} ${todo.completed ? styles.completed : ''} ${selected ? styles.selected : ''} ${todo.pinned ? styles.pinned : ''} ${viewMode === 'grid' ? styles.gridItem : ''} fade-in`}
-      style={style}
+      ref={setNodeRef}
+      style={dragStyle}
+      className={`${styles.item} ${todo.completed ? styles.completed : ''} ${selected ? styles.selected : ''} ${todo.pinned ? styles.pinned : ''} ${viewMode === 'grid' ? styles.gridItem : ''} ${isDragging ? styles.dragging : ''} fade-in`}
     >
       {/* Pin indicator */}
       {todo.pinned && <div className={styles.pinBar} />}
 
       <div className={styles.topRow}>
+        {/* Drag handle */}
+        <span
+          className={styles.dragHandle}
+          {...attributes}
+          {...listeners}
+          title="Drag to reorder"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+            <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+            <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+          </svg>
+        </span>
         <input type="checkbox" className={styles.selectBox} checked={selected} onChange={onSelect} onClick={e => e.stopPropagation()} />
         <button className={`${styles.checkBtn} ${todo.completed ? styles.checked : ''}`} onClick={onToggle} title={todo.completed ? 'Mark incomplete' : 'Mark complete'}>
           {todo.completed && (
@@ -38,6 +72,9 @@ export default function TodoItem({ todo, selected, onSelect, onToggle, onEdit, o
           )}
         </button>
         <span className={`${styles.priority} ${styles[todo.priority]}`}>{PRIORITY_LABELS[todo.priority]}</span>
+        {todo.repeat && (
+          <span className={styles.repeatBadge}>{REPEAT_LABELS[todo.repeat]}</span>
+        )}
         <div className={styles.itemActions}>
           <button className={`${styles.actionBtn} ${todo.pinned ? styles.pinActive : ''}`} onClick={onPin} title={todo.pinned ? 'Unpin' : 'Pin task'}>
             📌

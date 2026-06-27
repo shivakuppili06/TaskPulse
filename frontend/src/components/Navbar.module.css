@@ -5,6 +5,11 @@
   background: rgba(15, 17, 23, 0.88);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
+  transition: background 0.2s ease;
+}
+
+[data-theme="light"] .header {
+  background: rgba(244, 245, 249, 0.88);
 }
 
 .inner {
@@ -15,6 +20,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .brand {
@@ -41,6 +47,7 @@
 .nav {
   display: flex;
   gap: 4px;
+  flex: 1;
 }
 
 .link {
@@ -61,4 +68,24 @@
 .link.active {
   color: var(--text);
   background: var(--bg-hover);
+}
+
+.themeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+  flex-shrink: 0;
+}
+
+.themeBtn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }

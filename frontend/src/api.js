@@ -26,4 +26,8 @@ export const api = {
   clearCompleted: () => request(BASE, { method: 'DELETE', body: JSON.stringify({}) }),
   getStats: () => request('/api/stats'),
   getActivity: () => request(`${BASE}/activity`),
+  reorder: (ids) => request(`${BASE}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) }),
+  exportTodos: (format = 'json') => {
+    window.open(`${BASE}/export?format=${format}`, '_blank');
+  },
 };

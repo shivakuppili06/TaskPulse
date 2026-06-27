@@ -13,6 +13,7 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
   const [tags, setTags] = useState([]);
   const [timeEstimate, setTimeEstimate] = useState('');
   const [pinned, setPinned] = useState(false);
+  const [repeat, setRepeat] = useState(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const titleRef = useRef(null);
@@ -27,6 +28,7 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
       setTags(todo.tags || []);
       setTimeEstimate(todo.timeEstimate ? String(todo.timeEstimate) : '');
       setPinned(Boolean(todo.pinned));
+      setRepeat(todo.repeat || null);
     }
     setTimeout(() => titleRef.current?.focus(), 50);
   }, [todo]);
@@ -45,7 +47,7 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
     if (!title.trim()) { setError('Title is required'); return; }
     setSaving(true);
     try {
-      await onSave({ title, description, priority, dueDate: dueDate || null, category, tags, timeEstimate: timeEstimate ? parseInt(timeEstimate) : null, pinned });
+      await onSave({ title, description, priority, dueDate: dueDate || null, category, tags, timeEstimate: timeEstimate ? parseInt(timeEstimate) : null, pinned, repeat });
     } catch (e) {
       setError(e.message);
       setSaving(false);
@@ -106,6 +108,18 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
             <div className={styles.field}>
               <label>Time Estimate (min)</label>
               <input type="number" className={styles.input} value={timeEstimate} onChange={e => setTimeEstimate(e.target.value)} placeholder="e.g. 30" min="1" max="480" />
+            </div>
+          </div>
+
+          <div className={styles.row}>
+            <div className={styles.field}>
+              <label>Repeat 🔁</label>
+              <select className={styles.select} value={repeat || ''} onChange={e => setRepeat(e.target.value || null)}>
+                <option value="">No repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
             </div>
           </div>
 

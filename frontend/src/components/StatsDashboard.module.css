@@ -6,41 +6,8 @@
   background: var(--bg-card);
 }
 
-.toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-  transition: background var(--transition), color var(--transition);
-}
-
-.toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.toggleLabel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.chevron {
-  font-size: 12px;
-  transition: transform 0.2s ease;
-  display: inline-block;
-}
-
 .panel {
-  border-top: 1px solid var(--border);
   padding: 20px;
-  animation: fadeIn 0.2s ease;
 }
 
 .kpis {
@@ -65,6 +32,7 @@
   font-weight: 700;
   color: var(--text);
   line-height: 1.2;
+  transition: color 0.3s ease;
 }
 
 .kpiLabel {
@@ -212,4 +180,9 @@
   color: var(--text-muted);
   width: 20px;
   text-align: right;
+}
+
+.empty {
+  font-size: 12px;
+  color: var(--text-dim);
 }

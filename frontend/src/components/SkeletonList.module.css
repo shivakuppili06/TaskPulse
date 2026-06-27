@@ -1,0 +1,87 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.badge {
+  width: 52px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.action {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 44px;
+}
+
+.titleLine {
+  height: 16px;
+  width: 60%;
+  border-radius: 4px;
+}
+
+.descLine {
+  height: 13px;
+  width: 80%;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.metaRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.chip {
+  height: 20px;
+  width: 56px;
+  border-radius: 20px;
+}
+
+.chipWide {
+  width: 80px;
+}
