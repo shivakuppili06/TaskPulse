@@ -10,13 +10,30 @@ import {
 import {
   SortableContext,
   verticalListSortingStrategy,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import confetti from 'canvas-confetti';
+import { 
+  Search, 
+  Grid, 
+  List, 
+  Plus, 
+  MoreHorizontal, 
+  Calendar, 
+  Clock, 
+  Tag, 
+  MessageSquare, 
+  Paperclip, 
+  Trash2, 
+  Edit3, 
+  Copy, 
+  Archive, 
+  RefreshCw, 
+  Eye,
+  CheckSquare
+} from 'lucide-react';
 import { api } from '../api.js';
 import TodoItem from '../components/TodoItem.jsx';
 import AddTodoModal from '../components/AddTodoModal.jsx';
-import StatsDashboard from '../components/StatsDashboard.jsx';
 import SkeletonList from '../components/SkeletonList.jsx';
 import { useToast } from '../components/Toast.jsx';
 import styles from './TodoListPage.module.css';
@@ -52,10 +69,34 @@ const DATES = [
   { label: 'Upcoming', value: 'upcoming' },
 ];
 
-export default function TodoListPage() {
+const BOARD_COLUMNS = [
+  { id: 'todo', title: 'To Do', color: '#3b82f6', tintClass: 'todoTint' },
+  { id: 'in_progress', title: 'In Progress', color: '#f59e0b', tintClass: 'progressTint' },
+  { id: 'review', title: 'Review', color: '#8b5cf6', tintClass: 'reviewTint' },
+  { id: 'completed', title: 'Completed', color: '#10b981', tintClass: 'completedTint' }
+];
+
+const getMockMeta = (id) => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const comments = Math.abs(hash % 5);
+  const attachments = Math.abs((hash >> 2) % 3);
+  return { comments, attachments };
+};
+
+function getStatusFromMode(mode) {
+  if (mode === 'archive') return 'archived';
+  if (mode === 'deleted') return 'deleted';
+  return 'all';
+}
+
+export default function TodoListPage({ mode = 'tasks' }) {
   const navigate = useNavigate();
   const toast = useToast();
   const searchRef = useRef(null);
+  const menuRef = useRef(null);
 
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -66,24 +107,40 @@ export default function TodoListPage() {
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('viewMode') || 'list');
   const [showSearch, setShowSearch] = useState(false);
 
-  const location = useLocation();
-  const queryStatus = new URLSearchParams(location.search).get('status');
-  
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState(queryStatus || 'all');
+  const [status, setStatus] = useState(getStatusFromMode(mode));
   
   useEffect(() => {
-    setStatus(queryStatus || 'all');
-  }, [queryStatus]);
+    setStatus(getStatusFromMode(mode));
+  }, [mode]);
   const [priority, setPriority] = useState('all');
   const [category, setCategory] = useState('all');
   const [dueDate, setDueDate] = useState('all');
   const [sortBy, setSortBy] = useState('order');
 
-  // Pending undo deletes: { id, todo, timerId, index }
-  const pendingDeletes = useRef({});
+  // Drag states for Board view
+  const [draggedTaskId, setDraggedTaskId] = useState(null);
+  const [draggedOverColumn, setDraggedOverColumn] = useState(null);
+
+  // Inline board creation states
+  const [inlineColId, setInlineColId] = useState(null);
+  const [inlineTitle, setInlineTitle] = useState('');
+
+  // Three-dot Active Card Menu State
+  const [activeMenuId, setActiveMenuId] = useState(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Close menus on click outside
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setActiveMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const fetchTodos = useCallback(async () => {
     try {
@@ -103,10 +160,9 @@ export default function TodoListPage() {
     return () => clearTimeout(timer);
   }, [fetchTodos, search]);
 
-  // Open search panel and auto-focus when / is pressed
+  // Keyboard shortcut handler
   useEffect(() => {
     const handler = (e) => {
-      // Escape must fire even when an input is focused (closes the search panel)
       if (e.key === 'Escape') {
         setShowModal(false);
         setEditingTodo(null);
@@ -117,18 +173,11 @@ export default function TodoListPage() {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (e.key === 'n') { e.preventDefault(); setEditingTodo(null); setShowModal(true); }
       if (e.key === '/') { e.preventDefault(); setShowSearch(true); setTimeout(() => searchRef.current?.focus(), 50); }
-      if (e.key === 'g') setViewMode(v => { const n = v === 'list' ? 'grid' : 'list'; localStorage.setItem('viewMode', n); return n; });
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Auto-focus search input when panel opens
-  useEffect(() => {
-    if (showSearch) setTimeout(() => searchRef.current?.focus(), 50);
-  }, [showSearch]);
-
-  // Fire confetti when all active tasks are completed
   function maybeConfetti(updatedTodos) {
     const activeLeft = updatedTodos.filter(t => !t.completed).length;
     if (activeLeft === 0 && updatedTodos.length > 0) {
@@ -161,268 +210,228 @@ export default function TodoListPage() {
   }
 
   async function handleDelete(id) {
-    const idx = todos.findIndex(t => t.id === id);
-    const todo = todos[idx];
-    if (!todo) return;
-
-    const isHardDelete = !!todo.deletedAt;
-
-    // Optimistically update UI
+    setActiveMenuId(null);
+    if (!window.confirm('Delete this task?')) return;
+    const oldTodos = [...todos];
     setTodos(prev => prev.filter(t => t.id !== id));
-    setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
-
-    if (isHardDelete) {
-      // Hard delete from Trash: use 5s timer since it's destructive and cannot be undone in DB
-      const timerId = setTimeout(async () => {
-        delete pendingDeletes.current[id];
-        try {
-          await api.delete(id);
-        } catch (e) {
-          toast(e.message, 'error');
-          fetchTodos();
-        }
-      }, 5000);
-
-      pendingDeletes.current[id] = { todo, idx, timerId };
-
-      toast(
-        `"${todo.title}" permanently deleted`,
-        'info',
-        5000,
-        {
-          label: 'Undo',
-          onClick: () => {
-            const pending = pendingDeletes.current[id];
-            if (!pending) return;
-            clearTimeout(pending.timerId);
-            delete pendingDeletes.current[id];
-            setTodos(prev => {
-              const copy = [...prev];
-              copy.splice(Math.min(pending.idx, copy.length), 0, pending.todo);
-              return copy;
-            });
-            toast('Delete undone', 'success');
-          },
-        }
-      );
-    } else {
-      // Soft delete: call backend immediately to keep database and Trash view in sync
-      try {
-        await api.delete(id);
-        toast(
-          `"${todo.title}" moved to Trash`,
-          'info',
-          5000,
-          {
-            label: 'Undo',
-            onClick: async () => {
-              try {
-                await api.bulkAction('restore', [id]);
-                fetchTodos();
-                toast('Task restored', 'success');
-              } catch (e) {
-                toast(e.message, 'error');
-              }
-            },
-          }
-        );
-      } catch (e) {
-        toast(e.message, 'error');
-        fetchTodos();
-      }
+    try {
+      await api.delete(id);
+      toast('Task deleted', 'success');
+    } catch (err) {
+      setTodos(oldTodos);
+      toast(err.message, 'error');
     }
   }
 
-  async function handleTogglePin(id) {
-    const todo = todos.find(t => t.id === id);
-    const pinned = !todo.pinned;
-    setTodos(t => t.map(x => x.id === id ? { ...x, pinned } : x));
+  const handleDuplicate = async (todo) => {
+    setActiveMenuId(null);
     try {
-      await api.patch(id, { pinned });
-      toast(pinned ? 'Task pinned' : 'Task unpinned', 'info');
+      const duplicatedTodo = {
+        title: `${todo.title} (Copy)`,
+        description: todo.description,
+        priority: todo.priority,
+        dueDate: todo.dueDate,
+        tags: todo.tags,
+        category: todo.category,
+        subtasks: todo.subtasks ? todo.subtasks.map(st => ({ ...st, done: false })) : [],
+        notes: todo.notes,
+        pinned: todo.pinned,
+        repeat: todo.repeat,
+        timeEstimate: todo.timeEstimate,
+        kanbanStatus: todo.kanbanStatus || 'todo',
+        completed: false
+      };
+      const res = await api.create(duplicatedTodo);
+      setTodos(prev => [res.data, ...prev]);
+      toast('Task duplicated', 'success');
+    } catch (err) {
+      toast(`Duplication failed: ${err.message}`, 'error');
+    }
+  };
+
+  const handleArchive = async (todo) => {
+    setActiveMenuId(null);
+    const updatedArchived = !todo.archived;
+    try {
+      await api.bulkAction(updatedArchived ? 'archive' : 'unarchive', [todo.id]);
+      setTodos(prev => prev.filter(t => t.id !== todo.id));
+      toast(updatedArchived ? 'Task archived' : 'Task unarchived', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
+  const handleMoveTask = async (todoId, colId) => {
+    if (!todoId) return;
+    const todo = todos.find(t => t.id === todoId);
+    if (!todo || (todo.kanbanStatus || (todo.completed ? 'completed' : 'todo')) === colId) return;
+
+    // Optimistic Update
+    const oldTodos = [...todos];
+    setTodos(prev => prev.map(t => t.id === todoId ? { 
+      ...t, 
+      kanbanStatus: colId,
+      completed: colId === 'completed',
+      completedAt: colId === 'completed' ? new Date().toISOString() : null
+    } : t));
+
+    try {
+      await api.patch(todoId, { 
+        kanbanStatus: colId,
+        completed: colId === 'completed'
+      });
+      toast(`Task moved to ${BOARD_COLUMNS.find(c => c.id === colId).title}`, 'success');
+      if (colId === 'completed') {
+        confetti({ particleCount: 80, spread: 60, origin: { y: 0.8 } });
+      }
+    } catch (err) {
+      setTodos(oldTodos);
+      toast(`Failed to move task: ${err.message}`, 'error');
+    }
+  };
+
+  const handleInlineSave = async (colId) => {
+    if (!inlineTitle.trim()) {
+      setInlineColId(null);
+      return;
+    }
+    try {
+      const res = await api.create({
+        title: inlineTitle.trim(),
+        kanbanStatus: colId,
+        completed: colId === 'completed'
+      });
+      setTodos(prev => [res.data, ...prev]);
+      toast('Task created', 'success');
+      setInlineTitle('');
+      setInlineColId(null);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
+  async function handleDragEnd(event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = todos.findIndex(t => t.id === active.id);
+    const newIndex = todos.findIndex(t => t.id === over.id);
+    const reordered = [...todos];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+    setTodos(reordered);
+    try {
+      await api.reorder(reordered.map(t => t.id));
+    } catch (e) {
+      toast(e.message, 'error');
+      fetchTodos();
+    }
+  }
+
+  function handleSelect(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleSelectAll(e) {
+    if (e.target.checked) {
+      setSelected(new Set(displayTodos.map(t => t.id)));
+    } else {
+      setSelected(new Set());
+    }
+  }
+
+  async function handleBulkAction(action, data, specificIds = null) {
+    const ids = specificIds || Array.from(selected);
+    if (!ids.length) return;
+    try {
+      await api.bulkAction(action, ids, data);
+      setSelected(new Set());
+      fetchTodos();
+      toast(`Bulk ${action} successful`, 'success');
     } catch (e) {
       toast(e.message, 'error');
     }
   }
 
-  async function handleDeleteSelected() {
-    if (!selected.size) return;
-    if (!confirm(`Delete ${selected.size} task(s)?`)) return;
+  async function handleClearCompleted() {
     try {
-      await api.deleteMany([...selected]);
-      setTodos(prev => prev.filter(t => !selected.has(t.id)));
-      setSelected(new Set());
-      toast(`${selected.size} task(s) deleted`, 'success');
-    } catch (e) { toast(e.message, 'error'); }
+      await api.bulkAction('delete', todos.filter(t => t.completed && !t.deletedAt).map(t => t.id));
+      fetchTodos();
+      toast('Completed tasks cleared', 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
   }
 
   async function handleEmptyTrash() {
-    if (!todos.length) return;
-    if (!confirm('Permanently delete all items in Trash? This action cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to permanently delete all tasks in the trash?')) return;
     try {
-      const ids = todos.map(t => t.id);
-      await api.deleteMany(ids);
+      await api.emptyTrash();
       setTodos([]);
       toast('Trash emptied', 'success');
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) {
+      toast(e.message, 'error');
+    }
   }
 
-  async function handleClearCompleted() {
-    const count = todos.filter(t => t.completed).length;
-    if (!count) return;
-    if (!confirm(`Clear ${count} completed task(s)?`)) return;
-    try {
-      await api.clearCompleted();
-      setTodos(prev => prev.filter(t => !t.completed));
-      toast(`${count} completed task(s) cleared`, 'success');
-    } catch (e) { toast(e.message, 'error'); }
-  }
-
-  async function handleBulkAction(action, value = null, targetIds = null) {
-    const ids = targetIds || Array.from(selected);
-    if (!ids.length) return;
-    try {
-      if (action === 'delete') {
-        await api.deleteMany(ids);
-      } else {
-        await api.bulkAction(action, ids, value);
-      }
-      toast(`${action === 'archive' || action === 'unarchive' || action === 'restore' || action === 'delete' ? action : 'Bulk action'} applied`, 'success');
-      if (!targetIds) setSelected(new Set());
-      fetchTodos();
-    } catch (e) { toast(e.message, 'error'); }
-  }
-
-  function handleSelectAll() {
-    if (selected.size === todos.length) setSelected(new Set());
-    else setSelected(new Set(todos.map(t => t.id)));
-  }
-
-  function handleSelect(id) {
-    setSelected(prev => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-  }
-
-  function setView(mode) {
+  const setView = (mode) => {
     setViewMode(mode);
     localStorage.setItem('viewMode', mode);
-  }
+  };
 
-  function toggleSearch() {
-    if (showSearch) { setShowSearch(false); setSearch(''); }
-    else setShowSearch(true);
-  }
+  // Due date helpers
+  const getDueDateClass = (dateStr) => {
+    if (!dateStr) return '';
+    const today = new Date(); today.setHours(0,0,0,0);
+    const d = new Date(dateStr); d.setHours(0,0,0,0);
+    if (d < today) return styles.overdue;
+    if (d.getTime() === today.getTime()) return styles.today;
+    return styles.upcoming;
+  };
 
-  async function handleDragEnd(event) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    setTodos(prev => {
-      const oldIdx = prev.findIndex(t => t.id === active.id);
-      const newIdx = prev.findIndex(t => t.id === over.id);
-      const reordered = arrayMove(prev, oldIdx, newIdx);
-      api.reorder(reordered.map(t => t.id)).catch(() => toast('Failed to save order', 'error'));
-      return reordered;
-    });
-  }
+  const formatDueDate = (dateStr) => {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  };
 
-  const displayTodos = [...todos].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1;
-    if (!a.pinned && b.pinned) return 1;
-    return 0;
-  });
+  const getSubtaskRatio = (subtasks) => {
+    if (!subtasks || !subtasks.length) return null;
+    const completed = subtasks.filter(s => s.done).length;
+    return {
+      text: `${completed}/${subtasks.length}`,
+      percent: (completed / subtasks.length) * 100
+    };
+  };
 
-  const completedCount = todos.filter(t => t.completed).length;
-  const activeCount = todos.filter(t => !t.completed).length;
-  const overdueCount = todos.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < new Date()).length;
-
-  // Is any filter active?
-  const hasActiveFilter = search || priority !== 'all' || category !== 'all' || dueDate !== 'all' || sortBy !== 'order' || (status !== 'all' && status !== 'archived' && status !== 'deleted');
+  const displayTodos = todos;
+  const activeCount = todos.filter(t => !t.completed && !t.archived && !t.deletedAt).length;
+  const completedCount = todos.filter(t => t.completed && !t.archived && !t.deletedAt).length;
+  const hasActiveFilter = search || status !== 'all' || priority !== 'all' || category !== 'all' || dueDate !== 'all';
 
   return (
-    <main className={`page-container fade-in ${styles.page}`}>
-      {/* Header */}
-      <div className={styles.header}>
-        <div>
-          <h1 className={styles.title}>
-            {status === 'archived' ? 'Archive' : status === 'deleted' ? 'Trash' : 'My Tasks'}
-          </h1>
-          <div className={styles.headerMeta}>
-            <span className={styles.statChip}>{activeCount} active</span>
-            {completedCount > 0 && <span className={`${styles.statChip} ${styles.done}`}>{completedCount} done</span>}
-            {overdueCount > 0 && <span className={`${styles.statChip} ${styles.overdue}`}>⚠ {overdueCount} overdue</span>}
-          </div>
-        </div>
-        <div className={styles.headerActions}>
-          {/* Search toggle */}
-          <button
-            className={`${styles.iconBtn} ${hasActiveFilter ? styles.iconBtnActive : ''}`}
-            onClick={toggleSearch}
-            title="Search & filter (/)"
-            id="search-toggle"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-            {hasActiveFilter && <span className={styles.filterDot} />}
-          </button>
-
-          {/* View toggle */}
-          <div className={styles.viewToggle}>
-            <button className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewActive : ''}`} onClick={() => setView('list')} title="List view">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
-                <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
-                <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-              </svg>
-            </button>
-            <button className={`${styles.viewBtn} ${viewMode === 'grid' ? styles.viewActive : ''}`} onClick={() => setView('grid')} title="Grid view">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-              </svg>
-            </button>
-          </div>
-
-          <button className={styles.addBtn} onClick={() => { setEditingTodo(null); setShowModal(true); }}>
-            <span>+</span> New Task
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Dashboard */}
-      {status !== 'archived' && status !== 'deleted' && (
-        <StatsDashboard todos={todos} />
-      )}
-
-      {/* Spotlight search overlay */}
+    <main className={styles.page}>
+      {/* Search spotlight panel */}
       {showSearch && (
-        <div className={styles.spotlightBackdrop} onClick={toggleSearch}>
+        <div className={styles.spotlightBackdrop} onClick={() => setShowSearch(false)}>
           <div className={styles.spotlightPanel} onClick={e => e.stopPropagation()}>
-            {/* Search input */}
             <div className={styles.spotlightSearch}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-              </svg>
+              <Search size={18} />
               <input
                 ref={searchRef}
                 className={styles.spotlightInput}
-                placeholder="Search tasks, tags, categories…"
+                type="text"
+                placeholder="Type to search (e.g. landing page)..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-              {search
-                ? <button className={styles.spotlightClear} onClick={() => setSearch('')}>×</button>
-                : <kbd className={styles.spotlightEsc}>Esc</kbd>
-              }
+              {search && <button className={styles.spotlightClear} onClick={() => setSearch('')}>×</button>}
+              <span className={styles.spotlightEsc}>ESC</span>
             </div>
-
-            {/* Divider */}
             <div className={styles.spotlightDivider} />
-
-            {/* Filter row */}
             <div className={styles.spotlightFilters}>
               <div className={styles.spotlightFilterGroup}>
                 <span className={styles.spotlightFilterLabel}>Status</span>
@@ -435,24 +444,26 @@ export default function TodoListPage() {
               <div className={styles.spotlightFilterGroup}>
                 <span className={styles.spotlightFilterLabel}>Priority</span>
                 {PRIORITIES.map(p => (
-                  <button
-                    key={p.value}
-                    className={`${styles.filterBtn} ${priority === p.value ? styles.active : ''} ${priority === p.value && p.value !== 'all' ? styles[p.value] : ''}`}
-                    onClick={() => setPriority(p.value)}
-                  >{p.label}</button>
+                  <button key={p.value} className={`${styles.filterBtn} ${priority === p.value ? styles.active : ''} ${styles[p.value]}`} onClick={() => setPriority(p.value)}>
+                    {p.label}
+                  </button>
                 ))}
               </div>
               <div className={styles.spotlightFilterGroup}>
                 <span className={styles.spotlightFilterLabel}>Category</span>
-                <select className={styles.sortSelect} value={category} onChange={e => setCategory(e.target.value)}>
-                  {CATEGORIES.map(c => <option key={c} value={c === 'All' ? 'all' : c}>{c}</option>)}
-                </select>
+                {CATEGORIES.map(c => (
+                  <button key={c} className={`${styles.filterBtn} ${category === c.toLowerCase() ? styles.active : ''}`} onClick={() => setCategory(c.toLowerCase())}>
+                    {c}
+                  </button>
+                ))}
               </div>
               <div className={styles.spotlightFilterGroup}>
-                <span className={styles.spotlightFilterLabel}>Due</span>
-                <select className={styles.sortSelect} value={dueDate} onChange={e => setDueDate(e.target.value)}>
-                  {DATES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                </select>
+                <span className={styles.spotlightFilterLabel}>Due Date</span>
+                {DATES.map(d => (
+                  <button key={d.value} className={`${styles.filterBtn} ${dueDate === d.value ? styles.active : ''}`} onClick={() => setDueDate(d.value)}>
+                    {d.label}
+                  </button>
+                ))}
               </div>
               <div className={styles.spotlightFilterGroup}>
                 <span className={styles.spotlightFilterLabel}>Sort</span>
@@ -465,38 +476,61 @@ export default function TodoListPage() {
         </div>
       )}
 
+      {/* Header */}
+      <div className={styles.header}>
+        <div>
+          <h1 className={styles.title}>My Tasks</h1>
+          <div className={styles.headerMeta}>
+            <span className={styles.statChip}>{activeCount} active</span>
+          </div>
+        </div>
+
+        <div className={styles.headerActions}>
+          <button
+            className={`${styles.iconBtn} ${hasActiveFilter ? styles.iconBtnActive : ''}`}
+            onClick={() => setShowSearch(true)}
+            title="Filter panel"
+          >
+            <Search size={18} /> {hasActiveFilter && <span className={styles.filterDot} />}
+          </button>
+
+          {/* List/Grid/Board Toggles */}
+          <div className={styles.viewToggle}>
+            <button className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewActive : ''}`} onClick={() => setView('list')} title="List view">
+              <List size={16} />
+            </button>
+            <button className={`${styles.viewBtn} ${viewMode === 'grid' ? styles.viewActive : ''}`} onClick={() => setView('grid')} title="Grid view">
+              <Grid size={16} />
+            </button>
+            <button className={`${styles.viewBtn} ${viewMode === 'board' ? styles.viewActive : ''}`} onClick={() => setView('board')} title="Board view">
+              <Plus size={16} style={{ transform: 'rotate(45deg)' }} />
+            </button>
+          </div>
+
+          <button className={styles.addBtn} onClick={() => { setEditingTodo(null); setShowModal(true); }}>
+            <Plus size={16} /> <span className={styles.addBtnText}>New Task</span>
+          </button>
+        </div>
+      </div>
+
       {/* Bulk actions */}
-      {todos.length > 0 && (
+      {viewMode !== 'board' && displayTodos.length > 0 && (
         <div className={styles.bulkRow}>
           <label className={styles.selectAll}>
-            <input type="checkbox" checked={selected.size === todos.length && todos.length > 0} onChange={handleSelectAll} />
-            <span>{selected.size > 0 ? `${selected.size} selected` : 'Select all'}</span>
+            <input type="checkbox" checked={selected.size === displayTodos.length && displayTodos.length > 0} onChange={handleSelectAll} />
+            <span>Select all</span>
           </label>
+
           <div className={styles.bulkActions}>
-            {selected.size > 0 && status === 'deleted' && (
+            {selected.size > 0 && (
               <>
-                <button className={styles.ghostBtn} onClick={() => handleBulkAction('restore')}>Restore Selected</button>
-                <button className={styles.dangerBtn} onClick={handleDeleteSelected}>Permanently Delete ({selected.size})</button>
-              </>
-            )}
-            
-            {selected.size > 0 && status !== 'deleted' && (
-              <>
-                <button className={styles.ghostBtn} onClick={() => handleBulkAction('complete')}>Complete</button>
-                {status === 'archived' ? (
-                  <button className={styles.ghostBtn} onClick={() => handleBulkAction('unarchive')}>Unarchive</button>
-                ) : (
-                  <button className={styles.ghostBtn} onClick={() => handleBulkAction('archive')}>Archive</button>
-                )}
-                
-                <select 
-                  className={styles.bulkSelect} 
-                  onChange={(e) => {
-                    if(e.target.value) {
-                      handleBulkAction('priority', e.target.value);
-                      e.target.value = "";
-                    }
-                  }}
+                <button className={styles.dangerBtn} onClick={() => handleBulkAction('delete')}>Delete ({selected.size})</button>
+                <button className={styles.ghostBtn} onClick={() => handleBulkAction(status === 'archived' ? 'unarchive' : 'archive')}>
+                  {status === 'archived' ? 'Unarchive' : 'Archive'}
+                </button>
+                <select
+                  className={styles.bulkSelect}
+                  onChange={(e) => handleBulkAction('priority', e.target.value)}
                   defaultValue=""
                 >
                   <option value="" disabled>Set Priority...</option>
@@ -504,8 +538,6 @@ export default function TodoListPage() {
                   <option value="medium">Medium</option>
                   <option value="low">Low</option>
                 </select>
-
-                <button className={styles.dangerBtn} onClick={handleDeleteSelected}>Delete ({selected.size})</button>
               </>
             )}
 
@@ -556,6 +588,162 @@ export default function TodoListPage() {
             <button className={styles.ghostBtn} onClick={() => { setSearch(''); setStatus('all'); setPriority('all'); setCategory('all'); setDueDate('all'); }}>Clear filters</button>
           )}
         </div>
+      ) : viewMode === 'board' ? (
+        /* Highly Polished Board columns */
+        <div className={styles.board}>
+          {BOARD_COLUMNS.map(col => {
+            const colTodos = displayTodos.filter(t => (t.kanbanStatus || (t.completed ? 'completed' : 'todo')) === col.id);
+            return (
+              <div
+                key={col.id}
+                className={`${styles.boardColumn} ${styles[col.tintClass]} ${draggedOverColumn === col.id ? styles.boardDragOver : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDraggedOverColumn(col.id);
+                }}
+                onDragLeave={() => setDraggedOverColumn(null)}
+                onDrop={() => {
+                  setDraggedOverColumn(null);
+                  handleMoveTask(draggedTaskId, col.id);
+                }}
+              >
+                <div className={styles.boardColumnHeader}>
+                  <div className={styles.boardColTitle}>
+                    <span className={styles.boardColDot} style={{ background: col.color }} />
+                    <h3>{col.title}</h3>
+                    <span className={styles.boardCountBadge}>{colTodos.length}</span>
+                  </div>
+                  {col.id === 'todo' && (
+                    <button className={styles.boardAddColBtn} onClick={() => { setTargetColumn(col.id); setEditingTodo(null); setShowModal(true); }}>
+                      <Plus size={16} />
+                    </button>
+                  )}
+                </div>
+
+                <div className={styles.boardCardsContainer}>
+                  {inlineColId === col.id && (
+                    <div className={styles.boardInlineCreateCard}>
+                      <input
+                        type="text"
+                        placeholder="What needs to be done?"
+                        value={inlineTitle}
+                        onChange={e => setInlineTitle(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleInlineSave(col.id);
+                          if (e.key === 'Escape') setInlineColId(null);
+                        }}
+                        autoFocus
+                        className={styles.boardInlineInput}
+                      />
+                      <div className={styles.boardInlineActions}>
+                        <button className={styles.boardInlineSaveBtn} onClick={() => handleInlineSave(col.id)}>Add</button>
+                        <button className={styles.boardInlineCancelBtn} onClick={() => setInlineColId(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {colTodos.length === 0 && inlineColId !== col.id ? (
+                    <div className={styles.boardEmptyColumn}>No tasks</div>
+                  ) : (
+                    colTodos.map(todo => {
+                      const ratio = getSubtaskRatio(todo.subtasks);
+                      const mockMeta = getMockMeta(todo.id);
+                      return (
+                        <div
+                          key={todo.id}
+                          className={`${styles.boardCard} ${todo.pinned ? styles.boardPinned : ''}`}
+                          draggable="true"
+                          onDragStart={() => setDraggedTaskId(todo.id)}
+                        >
+                          <div className={styles.boardCardHeader}>
+                            <span className={`${styles.boardPriorityBadge} ${styles[todo.priority]}`}>
+                              {todo.priority}
+                            </span>
+                            
+                            <div className={styles.menuContainer}>
+                              <button 
+                                className={styles.threeDotBtn} 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveMenuId(activeMenuId === todo.id ? null : todo.id);
+                                }}
+                                title="Actions"
+                              >
+                                <MoreHorizontal size={14} />
+                              </button>
+
+                              {activeMenuId === todo.id && (
+                                <div ref={menuRef} className={styles.dropdownMenu}>
+                                  <button onClick={() => navigate(`/todo?id=${todo.id}`)}><Eye size={12} style={{ marginRight: '8px' }} /> View Details</button>
+                                  <button onClick={() => { setEditingTodo(todo); setShowModal(true); }}><Edit3 size={12} style={{ marginRight: '8px' }} /> Edit Task</button>
+                                  <button onClick={() => handleDuplicate(todo)}><Copy size={12} style={{ marginRight: '8px' }} /> Duplicate</button>
+                                  <button onClick={() => handleArchive(todo)}><Archive size={12} style={{ marginRight: '8px' }} /> Archive</button>
+                                  <button onClick={() => handleDelete(todo.id)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <h4 className={styles.boardCardTitle} onClick={() => navigate(`/todo?id=${todo.id}`)}>{todo.title}</h4>
+                          {todo.description && <p className={styles.boardCardDesc}>{todo.description}</p>}
+                          
+                          <div className={styles.boardCardMiddle}>
+                            {todo.category && todo.category !== 'General' && (
+                              <span className={styles.boardCategoryBadge}>
+                                <Tag size={10} style={{ marginRight: '3px' }} />
+                                {todo.category}
+                              </span>
+                            )}
+                            {todo.dueDate && (
+                              <span className={`${styles.boardDueDate} ${getDueDateClass(todo.dueDate)}`}>
+                                <Calendar size={10} style={{ marginRight: '3px' }} />
+                                {formatDueDate(todo.dueDate)}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Subtask Progress bar inside Kanban card */}
+                          {ratio && (
+                            <div className={styles.progressSection}>
+                              <div className={styles.progressMeta}>
+                                <span><CheckSquare size={10} style={{ marginRight: '3px' }} /> {ratio.text} checklist</span>
+                              </div>
+                              <div className={styles.progressBar}>
+                                <div className={styles.progressFill} style={{ width: `${ratio.percent}%` }} />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className={styles.boardCardFooter}>
+                            <div className={styles.footerStats}>
+                              {mockMeta.comments > 0 && (
+                                <span className={styles.statIcon}>
+                                  <MessageSquare size={11} style={{ marginRight: '3px' }} />
+                                  {mockMeta.comments}
+                                </span>
+                              )}
+                              {mockMeta.attachments > 0 && (
+                                <span className={styles.statIcon}>
+                                  <Paperclip size={11} style={{ marginRight: '3px' }} />
+                                  {mockMeta.attachments}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {col.id === 'todo' && inlineColId !== col.id && (
+                  <button className={styles.boardQuickAddTrigger} onClick={() => setInlineColId(col.id)}>
+                    <Plus size={14} style={{ marginRight: '4px' }} /> Add task
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={displayTodos.map(t => t.id)} strategy={verticalListSortingStrategy}>
@@ -573,7 +761,7 @@ export default function TodoListPage() {
                   onArchive={() => handleBulkAction(todo.archived ? 'unarchive' : 'archive', null, [todo.id])}
                   onRestore={() => handleBulkAction('restore', null, [todo.id])}
                   onView={() => navigate(`/todo?id=${todo.id}`)}
-                  onPin={() => handleTogglePin(todo.id, todo.pinned)}
+                  onPin={() => handleBulkAction(todo.pinned ? 'unpin' : 'pin', null, [todo.id])}
                   style={{ animationDelay: `${Math.min(i * 25, 300)}ms` }}
                 />
               ))}
@@ -593,7 +781,11 @@ export default function TodoListPage() {
                 setTodos(prev => prev.map(t => t.id === editingTodo.id ? res.data : t));
                 toast('Task updated', 'success');
               } else {
-                const res = await api.create(data);
+                const res = await api.create({
+                  ...data,
+                  kanbanStatus: targetColumn,
+                  completed: targetColumn === 'completed'
+                });
                 setTodos(prev => [res.data, ...prev]);
                 toast('Task created!', 'success');
               }

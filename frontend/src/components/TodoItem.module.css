@@ -2,20 +2,39 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 14px 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  transition: border-color var(--transition), background var(--transition), transform var(--transition);
+  transition: all var(--transition);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
-.item:hover { border-color: var(--text-dim); background: var(--bg-hover); }
-.item.selected { border-color: var(--accent); background: var(--accent-soft); }
-.item.completed { opacity: 0.55; }
-.item.pinned { border-color: var(--medium-soft); }
-.item.dragging { box-shadow: var(--shadow); border-color: var(--accent); }
+.item:hover {
+  transform: translateY(-1px);
+  border-color: var(--text-dim);
+  box-shadow: var(--shadow);
+}
+
+.item.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.item.completed {
+  opacity: 0.6;
+}
+
+.item.pinned {
+  border-left: 3px solid var(--pin);
+}
+
+.item.dragging {
+  box-shadow: var(--shadow);
+  border-color: var(--accent);
+}
 
 .pinBar {
   position: absolute;
@@ -25,20 +44,30 @@
 }
 
 /* Grid mode */
-.gridItem { min-height: 140px; }
-.gridItem .desc { -webkit-line-clamp: 3; }
+.gridItem {
+  min-height: 160px;
+}
 
 .topRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
-.selectBox { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+.selectBox {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
 
 .dragHandle {
-  display: flex; align-items: center; justify-content: center;
-  width: 16px; height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 24px;
   color: var(--text-dim);
   cursor: grab;
   flex-shrink: 0;
@@ -46,79 +75,207 @@
   transition: opacity var(--transition);
   touch-action: none;
 }
-.dragHandle:active { cursor: grabbing; }
-.item:hover .dragHandle { opacity: 1; }
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.item:hover .dragHandle {
+  opacity: 1;
+}
 
 .checkBtn {
-  width: 20px; height: 20px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid var(--text-dim);
+  border: 2px solid var(--text-muted);
   background: transparent;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   transition: all var(--transition);
-  color: #fff;
+  color: #ffffff;
+  cursor: pointer;
 }
-.checkBtn:hover { border-color: var(--accent); background: var(--accent-soft); }
-.checkBtn.checked { border-color: var(--success); background: var(--success); }
+
+.checkBtn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.checkBtn.checked {
+  border-color: var(--success);
+  background: var(--success);
+}
 
 .priority {
-  font-size: 11px; font-weight: 600;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   padding: 2px 7px;
   border-radius: 4px;
+  text-transform: uppercase;
 }
+
 .priority.high { color: var(--high); background: var(--high-soft); }
 .priority.medium { color: var(--medium); background: var(--medium-soft); }
 .priority.low { color: var(--low); background: var(--low-soft); }
 
+.repeatBadge {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 .itemActions {
-  display: flex; gap: 2px;
+  display: flex;
+  gap: 4px;
   margin-left: auto;
   opacity: 0;
   transition: opacity var(--transition);
 }
-.item:hover .itemActions { opacity: 1; }
+
+.item:hover .itemActions {
+  opacity: 1;
+}
 
 .actionBtn {
-  width: 28px; height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid transparent;
-  font-size: 12px;
+  font-size: 13px;
   transition: all var(--transition);
 }
-.actionBtn:hover { color: var(--text); background: var(--bg-input); border-color: var(--border); }
-.actionBtn.deleteBtn:hover { color: var(--danger); background: var(--high-soft); border-color: var(--high-soft); }
-.actionBtn.pinActive { color: var(--pin); opacity: 1 !important; }
 
-.content { cursor: pointer; flex: 1; }
-.title { font-size: 15px; font-weight: 500; color: var(--text); display: block; line-height: 1.4; }
-.completed .title { text-decoration: line-through; color: var(--text-muted); }
-.desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.actionBtn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
 
-/* Subtask progress */
-.subtaskProgress { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.progressTrack { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
-.progressFill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s ease; }
-.progressLabel { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.actionBtn.deleteBtn:hover {
+  color: var(--danger);
+  background: var(--high-soft);
+  border-color: var(--high-soft);
+}
 
-.meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; }
-.category { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-weight: 500; }
-.tag { font-size: 11px; color: var(--text-muted); background: var(--bg-input); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); }
-.timeEst { font-size: 11px; color: var(--text-muted); }
-.due { font-size: 11px; color: var(--text-muted); }
-.due.overdue { color: var(--danger); }
-.due.today { color: var(--medium); }
-.due.soon { color: var(--accent); }
+.actionBtn.pinActive {
+  color: var(--pin);
+}
 
-.repeatBadge {
-  font-size: 10px;
+.content {
+  cursor: pointer;
+  flex: 1;
+}
+
+.title {
+  font-size: var(--fs-md);
   font-weight: 600;
-  padding: 2px 6px;
+  color: var(--text);
+  display: block;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.completed .title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.desc {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+/* Footer Section */
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.footerLeft {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.categoryBadge {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  padding: 1px 6px;
   border-radius: 4px;
-  background: var(--accent-soft);
+}
+
+.dueDateChip {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.dueDateChip.overdue {
+  color: var(--high);
+  background: var(--high-soft);
+}
+
+.dueDateChip.today {
+  color: var(--medium);
+  background: var(--medium-soft);
+}
+
+.dueDateChip.soon {
   color: var(--accent);
-  letter-spacing: 0.2px;
+  background: var(--accent-soft);
+}
+
+.dueDateChip.future {
+  color: var(--text-muted);
+  background: var(--bg-hover);
+}
+
+/* Progress bar inside card */
+.progressSection {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.progressBar {
+  width: 60px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressFill {
+  background: var(--accent);
+  height: 100%;
+  border-radius: 3px;
 }

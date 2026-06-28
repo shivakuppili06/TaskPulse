@@ -1,13 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { ChevronLeft, Edit, Archive, Trash2, RotateCcw } from 'lucide-react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
+import AddTodoModal from '../components/AddTodoModal.jsx';
 import styles from './TodoDetailPage.module.css';
 
 const PRIORITY_CONFIG = {
   high: { label: 'High', color: 'var(--high)', bg: 'var(--high-soft)' },
   medium: { label: 'Medium', color: 'var(--medium)', bg: 'var(--medium-soft)' },
   low: { label: 'Low', color: 'var(--low)', bg: 'var(--low-soft)' },
+};
+
+const KANBAN_STATUS_LABELS = {
+  todo: 'To Do',
+  in_progress: 'In Progress',
+  review: 'Review',
+  completed: 'Completed'
 };
 
 function fmt(dateStr) {
@@ -25,18 +34,6 @@ function fmtDate(dateStr) {
   });
 }
 
-function dueBadge(dueDate, completed) {
-  if (!dueDate) return null;
-  if (completed) return { text: 'Completed on time', cls: 'done' };
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const d = new Date(dueDate); d.setHours(0, 0, 0, 0);
-  const diff = (d - today) / 86400000;
-  if (diff < 0) return { text: `Overdue by ${Math.abs(Math.floor(diff))} day(s)`, cls: 'overdue' };
-  if (diff === 0) return { text: 'Due today!', cls: 'today' };
-  if (diff <= 3) return { text: `Due in ${Math.floor(diff)} day(s)`, cls: 'soon' };
-  return { text: `Due ${fmtDate(dueDate)}`, cls: '' };
-}
-
 export default function TodoDetailPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -46,71 +43,29 @@ export default function TodoDetailPage() {
   const [todo, setTodo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [notes, setNotes] = useState('');
-  const [newSubtask, setNewSubtask] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     if (!id) { setError('No todo ID provided in URL'); setLoading(false); return; }
     api.getById(id)
-      .then(d => { setTodo(d.data); setNotes(d.data.notes || ''); })
+      .then(d => setTodo(d.data))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
 
   async function toggleComplete() {
-    const updated = { ...todo, completed: !todo.completed, updatedAt: new Date().toISOString() };
-    if (!todo.completed) updated.completedAt = new Date().toISOString();
-    setTodo(updated);
+    const isCompleted = !todo.completed;
+    const nextStatus = isCompleted ? 'completed' : 'todo';
     try {
-      const res = await api.patch(id, { completed: !todo.completed });
+      const res = await api.patch(id, { 
+        completed: isCompleted,
+        kanbanStatus: nextStatus
+      });
       setTodo(res.data);
+      toast(isCompleted ? 'Task completed! 🎉' : 'Marked as active', 'success');
     } catch (e) {
-      setTodo(todo);
-      setError(e.message);
+      toast(e.message, 'error');
     }
-  }
-
-  async function saveNotes() {
-    setSaving(true);
-    try {
-      const res = await api.patch(id, { notes });
-      setTodo(res.data);
-      setEditingNotes(false);
-      toast('Notes saved', 'success');
-    } catch (e) { setError(e.message); toast(e.message, 'error'); }
-    finally { setSaving(false); }
-  }
-
-  async function addSubtask() {
-    if (!newSubtask.trim()) return;
-    const subtask = { id: Date.now().toString(), text: newSubtask.trim(), done: false };
-    const subtasks = [...(todo.subtasks || []), subtask];
-    setTodo(prev => ({ ...prev, subtasks }));
-    setNewSubtask('');
-    try {
-      const res = await api.patch(id, { subtasks });
-      setTodo(res.data);
-    } catch (e) { setError(e.message); }
-  }
-
-  async function toggleSubtask(stId) {
-    const subtasks = todo.subtasks.map(s => s.id === stId ? { ...s, done: !s.done } : s);
-    setTodo(prev => ({ ...prev, subtasks }));
-    try {
-      const res = await api.patch(id, { subtasks });
-      setTodo(res.data);
-    } catch (e) { setError(e.message); }
-  }
-
-  async function deleteSubtask(stId) {
-    const subtasks = todo.subtasks.filter(s => s.id !== stId);
-    setTodo(prev => ({ ...prev, subtasks }));
-    try {
-      const res = await api.patch(id, { subtasks });
-      setTodo(res.data);
-    } catch (e) { setError(e.message); }
   }
 
   async function deleteTodo() {
@@ -124,7 +79,7 @@ export default function TodoDetailPage() {
       await api.delete(id);
       toast(isHardDelete ? 'Task permanently deleted' : 'Task moved to Trash', 'success');
       navigate('/');
-    } catch (e) { setError(e.message); toast(e.message, 'error'); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   async function restoreTodo() {
@@ -132,8 +87,28 @@ export default function TodoDetailPage() {
       await api.bulkAction('restore', [id]);
       toast('Task restored', 'success');
       navigate('/');
-    } catch (e) { setError(e.message); toast(e.message, 'error'); }
+    } catch (e) { toast(e.message, 'error'); }
   }
+
+  async function handleArchive() {
+    const updatedArchived = !todo.archived;
+    try {
+      await api.bulkAction(updatedArchived ? 'archive' : 'unarchive', [id]);
+      toast(updatedArchived ? 'Task archived' : 'Task unarchived', 'success');
+      navigate('/');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  const handleSave = async (data) => {
+    try {
+      const res = await api.update(id, data);
+      setTodo(res.data);
+      setShowModal(false);
+      toast('Task updated', 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
 
   if (loading) return (
     <div className={styles.center}>
@@ -152,24 +127,13 @@ export default function TodoDetailPage() {
   if (!todo) return null;
 
   const pri = PRIORITY_CONFIG[todo.priority] || PRIORITY_CONFIG.medium;
-  const due = dueBadge(todo.dueDate, todo.completed);
-  const doneSubtasks = todo.subtasks?.filter(s => s.done).length || 0;
-  const totalSubtasks = todo.subtasks?.length || 0;
-  const progress = totalSubtasks ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
 
   return (
-    <main className={`page-container fade-in ${styles.page}`}>
+    <main className={styles.page}>
       {/* Breadcrumb */}
-      <button className={styles.backBtn} onClick={() => navigate('/')}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-        All Tasks
+      <button className={styles.backBtn} onClick={() => navigate('/tasks')}>
+        <ChevronLeft size={16} /> All Tasks
       </button>
-
-      {error && (
-        <div className={styles.errorBanner}>⚠ {error}</div>
-      )}
 
       {/* Hero card */}
       <div className={styles.heroCard}>
@@ -179,17 +143,16 @@ export default function TodoDetailPage() {
               {pri.label} Priority
             </span>
             {todo.category && <span className={styles.categoryBadge}>{todo.category}</span>}
-            {due && (
-              <span className={`${styles.dueBadge} ${styles[due.cls]}`}>
-                ⏰ {due.text}
-              </span>
-            )}
+            <span className={styles.statusBadge}>
+              {KANBAN_STATUS_LABELS[todo.kanbanStatus] || (todo.completed ? 'Completed' : 'To Do')}
+            </span>
           </div>
+
           <div className={styles.heroActions}>
             {todo.deletedAt ? (
               <>
-                <button className={styles.completeBtn} onClick={restoreTodo}>
-                  🔄 Restore Task
+                <button className={styles.restoreBtn} onClick={restoreTodo}>
+                  <RotateCcw size={14} style={{ marginRight: '6px' }} /> Restore Task
                 </button>
                 <button className={styles.deleteBtn} onClick={deleteTodo}>
                   Delete Permanently
@@ -201,9 +164,17 @@ export default function TodoDetailPage() {
                   className={`${styles.completeBtn} ${todo.completed ? styles.completedBtn : ''}`}
                   onClick={toggleComplete}
                 >
-                  {todo.completed ? '↩ Mark Incomplete' : '✓ Mark Complete'}
+                  {todo.completed ? 'Mark Incomplete' : 'Mark Complete'}
                 </button>
-                <button className={styles.deleteBtn} onClick={deleteTodo}>Delete</button>
+                <button className={styles.editBtn} onClick={() => setShowModal(true)}>
+                  <Edit size={14} /> Edit
+                </button>
+                <button className={styles.archiveBtn} onClick={handleArchive}>
+                  <Archive size={14} /> {todo.archived ? 'Unarchive' : 'Archive'}
+                </button>
+                <button className={styles.deleteBtn} onClick={deleteTodo}>
+                  <Trash2 size={14} /> Delete
+                </button>
               </>
             )}
           </div>
@@ -216,158 +187,56 @@ export default function TodoDetailPage() {
         {todo.description && (
           <p className={styles.heroDesc}>{todo.description}</p>
         )}
-
-        {todo.tags?.length > 0 && (
-          <div className={styles.tagsRow}>
-            {todo.tags.map(tag => (
-              <span key={tag} className={styles.tag}>#{tag}</span>
-            ))}
-          </div>
-        )}
       </div>
 
+      {/* Details Grid */}
       <div className={styles.grid}>
-        {/* Left column */}
-        <div className={styles.col}>
-          {/* Subtasks */}
-          <div className={styles.card}>
-            <div className={styles.cardHeader}>
-              <h2 className={styles.cardTitle}>Subtasks</h2>
-              {totalSubtasks > 0 && (
-                <span className={styles.progressLabel}>{doneSubtasks}/{totalSubtasks}</span>
-              )}
+        <div className={styles.card}>
+          <h2 className={styles.cardTitle}>Task Properties</h2>
+          <div className={styles.metaList}>
+            <div className={styles.metaItem}>
+              <span className={styles.metaKey}>Status</span>
+              <span className={`${styles.metaVal} ${todo.completed ? styles.statusDone : styles.statusActive}`}>
+                {todo.completed ? 'Completed' : 'Active'}
+              </span>
             </div>
-
-            {totalSubtasks > 0 && (
-              <div className={styles.progressBar}>
-                <div className={styles.progressFill} style={{ width: `${progress}%` }} />
+            <div className={styles.metaItem}>
+              <span className={styles.metaKey}>Priority</span>
+              <span className={styles.metaVal} style={{ color: pri.color, fontWeight: 600 }}>{pri.label}</span>
+            </div>
+            <div className={styles.metaItem}>
+              <span className={styles.metaKey}>Category</span>
+              <span className={styles.metaVal}>{todo.category || 'General'}</span>
+            </div>
+            <div className={styles.metaItem}>
+              <span className={styles.metaKey}>Due Date</span>
+              <span className={styles.metaVal}>{fmtDate(todo.dueDate)}</span>
+            </div>
+            <div className={styles.metaItem}>
+              <span className={styles.metaKey}>Created</span>
+              <span className={styles.metaVal}>{fmt(todo.createdAt)}</span>
+            </div>
+            <div className={styles.metaItem}>
+              <span className={styles.metaKey}>Updated</span>
+              <span className={styles.metaVal}>{fmt(todo.updatedAt)}</span>
+            </div>
+            {todo.completedAt && (
+              <div className={styles.metaItem}>
+                <span className={styles.metaKey}>Completed At</span>
+                <span className={`${styles.metaVal} ${styles.statusDone}`}>{fmt(todo.completedAt)}</span>
               </div>
             )}
-
-            <div className={styles.subtaskList}>
-              {todo.subtasks?.map(s => (
-                <div key={s.id} className={`${styles.subtask} ${s.done ? styles.subtaskDone : ''}`}>
-                  <button
-                    className={`${styles.subtaskCheck} ${s.done ? styles.subtaskChecked : ''}`}
-                    onClick={() => toggleSubtask(s.id)}
-                  >
-                    {s.done && (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                        <polyline points="20,6 9,17 4,12"/>
-                      </svg>
-                    )}
-                  </button>
-                  <span className={styles.subtaskText}>{s.text}</span>
-                  <button className={styles.subtaskDel} onClick={() => deleteSubtask(s.id)}>×</button>
-                </div>
-              ))}
-            </div>
-
-            <div className={styles.addSubtask}>
-              <input
-                className={styles.subtaskInput}
-                placeholder="Add a subtask…"
-                value={newSubtask}
-                onChange={e => setNewSubtask(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addSubtask()}
-              />
-              <button className={styles.addSubtaskBtn} onClick={addSubtask}>Add</button>
-            </div>
           </div>
-
-          {/* Notes */}
-          <div className={styles.card}>
-            <div className={styles.cardHeader}>
-              <h2 className={styles.cardTitle}>Notes</h2>
-              {!editingNotes ? (
-                <button className={styles.editNotes} onClick={() => setEditingNotes(true)}>
-                  {todo.notes ? 'Edit' : '+ Add'}
-                </button>
-              ) : (
-                <div className={styles.noteActions}>
-                  <button className={styles.cancelNote} onClick={() => { setEditingNotes(false); setNotes(todo.notes || ''); }}>
-                    Cancel
-                  </button>
-                  <button className={styles.saveNote} onClick={saveNotes} disabled={saving}>
-                    {saving ? '…' : 'Save'}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {editingNotes ? (
-              <textarea
-                className={styles.notesTextarea}
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="Add notes about this task…"
-                rows={5}
-                autoFocus
-              />
-            ) : (
-              <p className={styles.notesText}>
-                {todo.notes || <span className={styles.noNotes}>No notes yet.</span>}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Right column – metadata */}
-        <div className={styles.col}>
-          <div className={styles.card}>
-            <h2 className={styles.cardTitle}>Details</h2>
-            <div className={styles.metaList}>
-              <div className={styles.metaItem}>
-                <span className={styles.metaKey}>Status</span>
-                <span className={`${styles.metaVal} ${todo.completed ? styles.statusDone : styles.statusActive}`}>
-                  {todo.completed ? '✓ Completed' : '● Active'}
-                </span>
-              </div>
-              <div className={styles.metaItem}>
-                <span className={styles.metaKey}>Priority</span>
-                <span className={styles.metaVal} style={{ color: pri.color }}>{pri.label}</span>
-              </div>
-              <div className={styles.metaItem}>
-                <span className={styles.metaKey}>Category</span>
-                <span className={styles.metaVal}>{todo.category || 'General'}</span>
-              </div>
-              <div className={styles.metaItem}>
-                <span className={styles.metaKey}>Due Date</span>
-                <span className={styles.metaVal}>{fmtDate(todo.dueDate)}</span>
-              </div>
-              <div className={styles.metaItem}>
-                <span className={styles.metaKey}>Created</span>
-                <span className={styles.metaVal}>{fmt(todo.createdAt)}</span>
-              </div>
-              <div className={styles.metaItem}>
-                <span className={styles.metaKey}>Updated</span>
-                <span className={styles.metaVal}>{fmt(todo.updatedAt)}</span>
-              </div>
-              {todo.completedAt && (
-                <div className={styles.metaItem}>
-                  <span className={styles.metaKey}>Completed</span>
-                  <span className={`${styles.metaVal} ${styles.statusDone}`}>{fmt(todo.completedAt)}</span>
-                </div>
-              )}
-              <div className={styles.metaItem}>
-                <span className={styles.metaKey}>Task ID</span>
-                <span className={`${styles.metaVal} ${styles.idVal}`}>{todo.id}</span>
-              </div>
-            </div>
-          </div>
-
-          {todo.tags?.length > 0 && (
-            <div className={styles.card}>
-              <h2 className={styles.cardTitle}>Tags</h2>
-              <div className={styles.tagsGrid}>
-                {todo.tags.map(tag => (
-                  <span key={tag} className={styles.tagFull}>#{tag}</span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {showModal && (
+        <AddTodoModal
+          todo={todo}
+          onClose={() => setShowModal(false)}
+          onSave={handleSave}
+        />
+      )}
     </main>
   );
 }

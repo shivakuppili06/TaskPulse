@@ -32,4 +32,6 @@ export const api = {
   bulkAction: (action, ids, value) => request(`${BASE}/bulk`, { method: 'PATCH', body: JSON.stringify({ action, ids, value }) }),
   clearCompleted: () => request(BASE, { method: 'DELETE', body: JSON.stringify({}) }),
   reorder: (ids) => request(`${BASE}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) }),
+  getActivity: () => request(`${BASE}/activity`),
+  getStats: () => request('/api/stats'),
 };

@@ -137,6 +137,15 @@ router.post('/reorder', (req, res) => {
   }
 });
 
+// GET /api/todos/activity
+router.get('/activity', (req, res) => {
+  try {
+    res.json({ success: true, data: readActivity() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/todos/:id
 router.get('/:id', (req, res) => {
   try {
@@ -154,12 +163,19 @@ router.post('/', (req, res) => {
     const { title, description, priority, dueDate, tags, category, subtasks, notes, pinned, repeat } = req.body;
     if (!title?.trim()) return res.status(400).json({ success: false, error: 'Title is required' });
 
+    const reqStatus = req.body.kanbanStatus;
+    const isCompleted = req.body.completed === true || reqStatus === 'completed';
+    const finalKanbanStatus = ['todo', 'in_progress', 'review', 'completed'].includes(reqStatus)
+      ? reqStatus
+      : (isCompleted ? 'completed' : 'todo');
+
     const todos = readTodos();
     const todo = {
       id: uuidv4(),
       title: title.trim(),
       description: description?.trim() || '',
-      completed: false,
+      completed: isCompleted,
+      kanbanStatus: finalKanbanStatus,
       priority: ['high', 'medium', 'low'].includes(priority) ? priority : 'medium',
       dueDate: dueDate || null,
       tags: Array.isArray(tags) ? tags.map(t => t.trim()).filter(Boolean) : [],
@@ -168,7 +184,7 @@ router.post('/', (req, res) => {
       repeat: ['daily', 'weekly', 'monthly'].includes(repeat) ? repeat : null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      completedAt: null,
+      completedAt: isCompleted ? new Date().toISOString() : null,
       subtasks: Array.isArray(subtasks) ? subtasks : [],
       notes: notes || '',
       timeEstimate: req.body.timeEstimate || null,
@@ -198,11 +214,25 @@ router.put('/:id', (req, res) => {
     if (idx === -1) return res.status(404).json({ success: false, error: 'Todo not found' });
 
     const existing = todos[idx];
-    const { title, description, priority, dueDate, tags, category, completed, subtasks, notes, pinned, timeEstimate, timeSpent, repeat, archived, deletedAt } = req.body;
+    const { title, description, priority, dueDate, tags, category, completed, subtasks, notes, pinned, timeEstimate, timeSpent, repeat, archived, deletedAt, kanbanStatus } = req.body;
     if (title !== undefined && !title?.trim()) return res.status(400).json({ success: false, error: 'Title cannot be empty' });
 
     const wasCompleted = existing.completed;
-    const nowCompleted = completed !== undefined ? Boolean(completed) : existing.completed;
+    
+    let nowCompleted = existing.completed;
+    let finalKanbanStatus = existing.kanbanStatus || (existing.completed ? 'completed' : 'todo');
+
+    if (kanbanStatus !== undefined) {
+      finalKanbanStatus = kanbanStatus;
+      nowCompleted = kanbanStatus === 'completed';
+    } else if (completed !== undefined) {
+      nowCompleted = Boolean(completed);
+      if (nowCompleted) {
+        finalKanbanStatus = 'completed';
+      } else if (finalKanbanStatus === 'completed') {
+        finalKanbanStatus = 'todo';
+      }
+    }
 
     const updatedTodo = {
       ...existing,
@@ -213,6 +243,7 @@ router.put('/:id', (req, res) => {
       tags: tags !== undefined ? tags : existing.tags,
       category: category !== undefined ? category : existing.category,
       completed: nowCompleted,
+      kanbanStatus: finalKanbanStatus,
       subtasks: subtasks !== undefined ? subtasks : existing.subtasks,
       notes: notes !== undefined ? notes : existing.notes,
       pinned: pinned !== undefined ? Boolean(pinned) : existing.pinned,
@@ -222,7 +253,7 @@ router.put('/:id', (req, res) => {
       archived: archived !== undefined ? Boolean(archived) : existing.archived,
       deletedAt: deletedAt !== undefined ? deletedAt : existing.deletedAt,
       updatedAt: new Date().toISOString(),
-      completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : existing.completedAt,
+      completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : (nowCompleted ? existing.completedAt : null),
     };
     todos[idx] = updatedTodo;
 
@@ -312,14 +343,31 @@ router.patch('/:id', (req, res) => {
     const existing = todos[idx];
     const patch = req.body;
     const wasCompleted = existing.completed;
-    const nowCompleted = patch.completed !== undefined ? Boolean(patch.completed) : existing.completed;
+
+    let nowCompleted = existing.completed;
+    let finalKanbanStatus = existing.kanbanStatus || (existing.completed ? 'completed' : 'todo');
+
+    if (patch.kanbanStatus !== undefined) {
+      finalKanbanStatus = patch.kanbanStatus;
+      nowCompleted = patch.kanbanStatus === 'completed';
+      patch.completed = nowCompleted;
+    } else if (patch.completed !== undefined) {
+      nowCompleted = Boolean(patch.completed);
+      if (nowCompleted) {
+        finalKanbanStatus = 'completed';
+      } else if (finalKanbanStatus === 'completed') {
+        finalKanbanStatus = 'todo';
+      }
+      patch.kanbanStatus = finalKanbanStatus;
+    }
 
     const updatedTodo = {
       ...existing,
       ...patch,
       completed: nowCompleted,
+      kanbanStatus: finalKanbanStatus,
       updatedAt: new Date().toISOString(),
-      completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : existing.completedAt,
+      completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : (nowCompleted ? existing.completedAt : null),
     };
     todos[idx] = updatedTodo;
 

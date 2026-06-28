@@ -1,60 +1,60 @@
-# Contributing to todoapp
+# Contributing to Taska
 
-Thank you for your interest! This guide covers setup, development workflow, and conventions.
+This guide outlines setup instructions, branch naming conventions, and commit styles for the project.
 
 ---
 
 ## Prerequisites
 
-- **Node.js** ≥ 18
-- **npm** ≥ 9
+* Node.js >= 18
+* npm >= 9
 
 ---
 
-## Local Setup
+## Local Development Setup
 
 ```bash
-# 1. Clone the repo
-git clone <repo-url>
+# 1. Clone the repository
+git clone <repository-url>
 cd todo-app
 
-# 2. Backend
+# 2. Start the Backend API
 cd backend
-cp .env.example .env        # copy env template
+cp .env.example .env
 npm install
-npm run dev                 # starts on http://localhost:5000
+npm run dev
 
-# 3. Frontend (in a separate terminal)
+# 3. Start the Frontend client (in a new terminal window)
 cd ../frontend
 npm install
-npm run dev                 # starts on http://localhost:3000
+npm run dev
 ```
 
-The Vite dev server proxies `/api/*` requests to the Express backend automatically via `vite.config.js`.
+The Vite client server handles API requests by proxying `/api/*` to the Express backend server using configurations inside `vite.config.js`.
 
 ---
 
-## Project Structure
+## Folder Structure
 
 ```
 todo-app/
 ├── backend/
 │   ├── src/
-│   │   ├── server.js          # Express app entry, graceful shutdown
-│   │   ├── store.js           # JSON file read/write helpers
+│   │   ├── server.js          # Express initialization
+│   │   ├── store.js           # JSON database access methods
 │   │   └── routes/
-│   │       ├── todos.js       # CRUD + export + reorder endpoints
-│   │       └── stats.js       # Dashboard stats endpoint
+│   │       ├── todos.js       # Task REST endpoints
+│   │       └── stats.js       # Stats aggregation endpoint
 │   ├── data/
-│   │   └── todos.json         # Persisted todos (gitignored)
+│   │   └── todos.json         # JSON file store (gitignored)
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── components/        # Reusable React components
-│   │   ├── pages/             # Route-level page components
-│   │   ├── styles/            # Global CSS variables + animations
-│   │   ├── api.js             # Fetch wrapper for all API calls
-│   │   └── App.jsx            # Router + providers root
+│   │   ├── components/        # Modals, layout wrappers, cards
+│   │   ├── pages/             # Dashboard, Settings, Tasks workspace
+│   │   ├── styles/            # CSS variables and global rules
+│   │   ├── api.js             # API request functions
+│   │   └── App.jsx            # Routing configurations
 │   └── index.html
 └── docs/
     └── todoapp.postman_collection.json
@@ -62,39 +62,34 @@ todo-app/
 
 ---
 
-## Branch Naming
+## Git Branch Convention
 
-| Type        | Pattern                      | Example                       |
-|-------------|------------------------------|-------------------------------|
-| Feature     | `feat/<short-description>`   | `feat/recurring-tasks`        |
-| Bug fix     | `fix/<short-description>`    | `fix/tag-filter-case`         |
-| Docs        | `docs/<short-description>`   | `docs/update-readme`          |
-| Refactor    | `refactor/<description>`     | `refactor/extract-api-client` |
-| Chore       | `chore/<description>`        | `chore/update-deps`           |
+| Branch Type | Name Pattern | Example |
+|-------------|--------------|---------|
+| Feature | `feat/<description>` | `feat/recurring-tasks` |
+| Fix | `fix/<description>` | `fix/tag-case-sensitivity` |
+| Docs | `docs/<description>` | `docs/update-readme` |
+| Refactor | `refactor/<description>` | `refactor/extract-api-client` |
+| Chore | `chore/<description>` | `chore/update-deps` |
 
 ---
 
-## Commit Style
+## Commit Style Guide
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
+Please follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add recurring task support
-fix: correct tag filter case sensitivity
+feat: add support for recurring tasks
+fix: handle case sensitivity in tag searches
 docs: add architecture diagram to README
-chore: bump vite to 5.4
+chore: update vite to version 5.4
 ```
 
 ---
 
-## Adding a New API Endpoint
+## Code Additions Workflow
 
-1. Add the route handler in `backend/src/routes/todos.js` or `stats.js`
-2. Add the corresponding method in `frontend/src/api.js`
-3. Add a request example to `docs/todoapp.postman_collection.json`
-
----
-
-## Running Tests
-
-No automated test suite yet — contributions welcome! Verify manually using the Postman collection in `docs/`.
+1. Declare backend route handlers inside `backend/src/routes/todos.js`.
+2. Define the equivalent API fetch method inside `frontend/src/api.js`.
+3. Add a request mockup in `docs/todoapp.postman_collection.json`.
+4. Run `npm run build` inside `frontend` to verify production compilation before submitting code changes.

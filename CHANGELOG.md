@@ -1,53 +1,38 @@
 # Changelog
 
-All notable changes to **todoapp** are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+All notable changes to this project are documented here.
 
 ---
 
-## [2.1.0] — 2026-06-27
+## [2.1.0] - 2026-06-27
 
-### Added — Frontend
-- **Drag-and-drop reordering** — manually reorder tasks; order persists to backend via `POST /api/todos/reorder`
-- **Recurring tasks** — `repeat` field (daily / weekly / monthly); completing a recurring task auto-creates the next occurrence
-- **Dark / Light theme toggle** — sun/moon button in navbar; preference saved to `localStorage`
-- **Optimistic undo delete** — task removed from UI immediately with a 5-second Undo toast; API call fires only if not undone
-- **Confetti on all-done** — `canvas-confetti` burst when active task count reaches zero
-- **Loading skeletons** — shimmer skeleton cards replace the spinner during initial load
-- **Error boundary** — React `<ErrorBoundary>` wraps the whole app; JS crashes show a fallback instead of a white screen
+### Added - Frontend
+* **Drag-and-drop reordering:** Reorder tasks directly. Order persists to the backend via `POST /api/todos/reorder`.
+* **Recurring tasks:** Completed recurring tasks auto-create the next occurrence based on the `repeat` interval (daily, weekly, monthly).
+* **Dark & Light theme toggle:** Theme preference is saved to `localStorage` and toggled via the sidebar.
+* **Optimistic undo delete:** Deletes are handled optimistically with a 5-second undo toast before the API call is processed.
+* **Confetti feedback:** Adds a confetti burst when all active tasks in the workspace are completed.
+* **Loading skeletons:** Replaces loading spinners with shimmer skeletons for cards.
+* **React Error Boundary:** Fallback UI renders instead of a blank screen when React components crash.
 
-### Added — Backend
-- `GET /api/todos/export?format=csv|json` — download all todos as CSV or JSON
-- `POST /api/todos/reorder` — accepts `{ ids: [...] }` and persists custom sort order
-- `repeat` field on todos — stored and respected across POST / PUT / PATCH
-- Auto-creates next recurring occurrence when a recurring task is marked complete
-- `dotenv` integration — `PORT` and future config read from `.env`
-- Graceful shutdown — `SIGTERM` / `SIGINT` close the HTTP server cleanly before exit
-- `.env.example` committed for developer onboarding
-
-### Fixed
-- Tag filter already case-insensitive (confirmed correct, no regression)
+### Added - Backend
+* `GET /api/todos/export?format=csv|json` - Export all tasks as a CSV or JSON file.
+* `POST /api/todos/reorder` - Persists custom task order from payload `{ ids: [...] }`.
+* Support for `repeat` configuration across task updates.
+* Automatically creates the next recurring instance when a task completes.
+* `.env` file configuration using `dotenv`.
+* Clean shutdown logic handling `SIGTERM` and `SIGINT` signals.
 
 ---
 
-## [2.0.0] — Initial v2 release
+## [2.0.0] - Initial v2 release
 
 ### Added
-- Complete rewrite from vanilla JS → React 18 + Vite frontend
-- Express backend with JSON file store
-- Subtasks, notes, time estimates, categories, tags
-- Priority levels (high / medium / low)
-- Stats dashboard with completion rate
-- Activity log (last 100 actions)
-- Pinned tasks
-- Bulk delete / clear completed
-- Grid / list view toggle
-- Keyboard shortcuts (N, /, G, 1-3, ?, Esc)
-- Pagination support on API
-- Rate limiting, helmet, morgan, CORS
-
----
-
-## [1.0.0] — Legacy
-
-- Single-page vanilla JS todo with localStorage
+* Refactored client from vanilla JavaScript to React 18 and Vite.
+* Express backend with JSON file storage layer.
+* Subtasks checklists, metadata, and task notes.
+* Pinned task priority.
+* Completion stats dashboard.
+* Activity logger (restricted to the last 100 actions).
+* Bulk edit and clear operations.
+* Keyboard shortcut binds (`N`, `/`, `Esc`).

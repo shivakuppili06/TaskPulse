@@ -1,8 +1,8 @@
 .container {
   position: fixed;
-  bottom: 24px;
+  top: 24px;
   right: 24px;
-  z-index: 9999;
+  z-index: 10000;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -10,67 +10,115 @@
 }
 
 .toast {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  min-width: 320px;
+  max-width: 400px;
+  overflow: hidden;
+  animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: all;
+}
+
+.toastBody {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 18px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 500;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  animation: slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-  pointer-events: all;
-  border: 1px solid transparent;
-  max-width: 360px;
-}
-
-.success {
-  background: rgba(26, 29, 39, 0.95);
-  color: var(--success);
-  border-color: rgba(74,222,128,0.2);
-}
-
-.error {
-  background: rgba(26, 29, 39, 0.95);
-  color: var(--danger);
-  border-color: rgba(248,113,113,0.2);
-}
-
-.info {
-  background: rgba(26, 29, 39, 0.95);
-  color: var(--accent);
-  border-color: rgba(99,102,241,0.2);
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-4);
 }
 
 .icon {
-  font-size: 13px;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
+
+.successIcon { color: var(--success); }
+.errorIcon { color: var(--danger); }
+.warningIcon { color: var(--medium); }
+.infoIcon { color: var(--accent); }
 
 .message {
   flex: 1;
   color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .undoBtn {
-  background: transparent;
-  border: 1px solid currentColor;
-  color: inherit;
-  font-size: 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--fs-xs);
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-family: inherit;
-  flex-shrink: 0;
-  transition: background 0.12s ease;
-  opacity: 0.85;
+  margin-right: var(--sp-1);
 }
-.undoBtn:hover { opacity: 1; background: rgba(255,255,255,0.08); }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+.undoBtn:hover {
+  background: var(--border);
+}
+
+.closeBtn {
+  background: transparent;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.closeBtn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* Success status custom left tint */
+.success { border-left: 3px solid var(--success); }
+.error { border-left: 3px solid var(--danger); }
+.warning { border-left: 3px solid var(--medium); }
+.info { border-left: 3px solid var(--accent); }
+
+/* Progress bar animation */
+.progressBar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background: var(--accent);
+  animation-name: shrinkProgress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.success .progressBar { background: var(--success); }
+.error .progressBar { background: var(--danger); }
+.warning .progressBar { background: var(--medium); }
+.info .progressBar { background: var(--accent); }
+
+@keyframes shrinkProgress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

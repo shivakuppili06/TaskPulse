@@ -1,0 +1,209 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+  animation: fadeIn 0.3s ease;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.headerTitle h1 {
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.headerTitle p {
+  color: var(--text-muted);
+  font-size: var(--fs-base);
+  margin-top: 4px;
+}
+
+.quickAddBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 18px;
+  background: var(--accent);
+  color: #ffffff;
+  border-radius: var(--radius);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition);
+}
+
+.quickAddBtn:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+/* KPI Cards Grid */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--sp-4);
+}
+
+.kpiCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.kpiCard:hover {
+  transform: translateY(-2px);
+  border-color: var(--text-dim);
+  box-shadow: var(--shadow);
+}
+
+.kpiHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.kpiHeader h3 {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.totalIcon { color: var(--text-muted); }
+.activeIcon { color: var(--accent); }
+.completedIcon { color: var(--success); }
+.archivedIcon { color: var(--medium); }
+.trashIcon { color: var(--danger); }
+
+.kpiNumber {
+  font-size: var(--fs-2xl);
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+/* Widget Card */
+.widgetsGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.widgetCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-6);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.widgetHeader {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--sp-3);
+}
+
+.widgetHeader h3 {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.widgetContent {
+  min-height: 150px;
+}
+
+.emptyWidget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 150px;
+  color: var(--text-dim);
+  font-size: var(--fs-base);
+}
+
+.activityList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.activityItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.activityItem:last-child {
+  border-bottom: none;
+}
+
+.activityLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.actionLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.actionLabel.create { background: var(--accent-soft); color: var(--accent); }
+.actionLabel.update { background: var(--medium-soft); color: var(--medium); }
+.actionLabel.complete { background: var(--success-soft); color: var(--success); }
+.actionLabel.delete { background: var(--high-soft); color: var(--danger); }
+
+.activityDesc {
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+.activityTime {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.shimmerRow {
+  height: 100px;
+  background: linear-gradient(90deg, var(--skeleton-base) 25%, var(--skeleton-shine) 50%, var(--skeleton-base) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: var(--radius);
+}
+
+@media (max-width: 1024px) {
+  .kpiGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .kpiGrid {
+    grid-template-columns: 1fr;
+  }
+}
