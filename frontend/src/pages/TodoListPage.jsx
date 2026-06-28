@@ -616,7 +616,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
                     <h3>{col.title}</h3>
                     <span className={styles.boardCountBadge}>{colTodos.length}</span>
                   </div>
-                  {col.id === 'todo' && (
+                  {col.id === 'todo' && status !== 'deleted' && status !== 'archived' && (
                     <button className={styles.boardAddColBtn} onClick={() => { setTargetColumn(col.id); setEditingTodo(null); setShowModal(true); }}>
                       <Plus size={16} />
                     </button>
@@ -655,6 +655,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
                         <div
                           key={todo.id}
                           className={`${styles.boardCard} ${todo.pinned ? styles.boardPinned : ''}`}
+                          style={{ zIndex: activeMenuId === todo.id ? 100 : 'auto' }}
                           draggable="true"
                           onDragStart={() => setDraggedTaskId(todo.id)}
                         >
@@ -738,7 +739,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
                   )}
                 </div>
 
-                {col.id === 'todo' && inlineColId !== col.id && (
+                {col.id === 'todo' && status !== 'deleted' && status !== 'archived' && inlineColId !== col.id && (
                   <button className={styles.boardQuickAddTrigger} onClick={() => setInlineColId(col.id)}>
                     <Plus size={14} style={{ marginRight: '4px' }} /> Add task
                   </button>
