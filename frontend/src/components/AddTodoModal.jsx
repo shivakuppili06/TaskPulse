@@ -11,6 +11,8 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
   const [category, setCategory] = useState('General');
   const [tagsInput, setTagsInput] = useState('');
   const [tags, setTags] = useState([]);
+  const [subtasks, setSubtasks] = useState([]);
+  const [subtaskInput, setSubtaskInput] = useState('');
   const [timeEstimate, setTimeEstimate] = useState('');
   const [pinned, setPinned] = useState(false);
   const [repeat, setRepeat] = useState(null);
@@ -26,6 +28,7 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
       setDueDate(todo.dueDate ? todo.dueDate.slice(0, 10) : '');
       setCategory(todo.category || 'General');
       setTags(todo.tags || []);
+      setSubtasks(todo.subtasks || []);
       setTimeEstimate(todo.timeEstimate ? String(todo.timeEstimate) : '');
       setPinned(Boolean(todo.pinned));
       setRepeat(todo.repeat || null);
@@ -43,11 +46,22 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
     if (e.key === 'Backspace' && !tagsInput && tags.length) setTags(prev => prev.slice(0, -1));
   }
 
+  function addSubtask(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = subtaskInput.trim();
+      if (val) {
+        setSubtasks(prev => [...prev, { title: val, done: false }]);
+        setSubtaskInput('');
+      }
+    }
+  }
+
   async function handleSave() {
     if (!title.trim()) { setError('Title is required'); return; }
     setSaving(true);
     try {
-      await onSave({ title, description, priority, dueDate: dueDate || null, category, tags, timeEstimate: timeEstimate ? parseInt(timeEstimate) : null, pinned, repeat });
+      await onSave({ title, description, priority, dueDate: dueDate || null, category, tags, subtasks, timeEstimate: timeEstimate ? parseInt(timeEstimate) : null, pinned, repeat });
     } catch (e) {
       setError(e.message);
       setSaving(false);
@@ -132,6 +146,24 @@ export default function AddTodoModal({ todo, onClose, onSave }) {
                 </span>
               ))}
               <input className={styles.tagsInput} value={tagsInput} onChange={e => setTagsInput(e.target.value)} onKeyDown={addTag} placeholder={tags.length ? '' : 'Add tags (Enter or comma)'} />
+            </div>
+          </div>
+
+          <div className={styles.field}>
+            <label>Subtasks</label>
+            <div className={styles.subtasksWrap}>
+              {subtasks.map((st, i) => (
+                <div key={i} className={styles.subtaskRow}>
+                  <input type="checkbox" checked={st.done} onChange={e => {
+                    const newSt = [...subtasks];
+                    newSt[i].done = e.target.checked;
+                    setSubtasks(newSt);
+                  }} />
+                  <span className={st.done ? styles.subtaskDone : ''}>{st.title}</span>
+                  <button onClick={() => setSubtasks(prev => prev.filter((_, idx) => idx !== i))}>×</button>
+                </div>
+              ))}
+              <input className={styles.input} value={subtaskInput} onChange={e => setSubtaskInput(e.target.value)} onKeyDown={addSubtask} placeholder="Add a subtask (Press Enter)" />
             </div>
           </div>
 

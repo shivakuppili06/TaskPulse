@@ -26,8 +26,19 @@ router.get('/', (req, res) => {
     let todos = readTodos();
     const { status, priority, search, sortBy, order, category, tag } = req.query;
 
-    if (status && status !== 'all') {
-      todos = todos.filter(t => status === 'completed' ? t.completed : !t.completed);
+    if (status === 'deleted') {
+      todos = todos.filter(t => !!t.deletedAt);
+    } else if (status === 'archived') {
+      todos = todos.filter(t => t.archived && !t.deletedAt);
+    } else {
+      // For all non-deleted/non-archived views, filter out deleted and archived
+      todos = todos.filter(t => !t.deletedAt && !t.archived);
+      
+      if (status === 'active') {
+        todos = todos.filter(t => !t.completed);
+      } else if (status === 'completed') {
+        todos = todos.filter(t => t.completed);
+      }
     }
     if (priority && priority !== 'all') {
       todos = todos.filter(t => t.priority === priority);
@@ -37,6 +48,19 @@ router.get('/', (req, res) => {
     }
     if (tag) {
       todos = todos.filter(t => t.tags?.some(tg => tg.toLowerCase() === tag.toLowerCase()));
+    }
+    if (req.query.dueDate && req.query.dueDate !== 'all') {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      todos = todos.filter(t => {
+        if (!t.dueDate) return false;
+        const d = new Date(t.dueDate);
+        if (req.query.dueDate === 'overdue') return d < today;
+        if (req.query.dueDate === 'today') return d >= today && d < tomorrow;
+        if (req.query.dueDate === 'upcoming') return d >= tomorrow;
+        return true;
+      });
     }
     if (search) {
       const q = search.toLowerCase();
@@ -70,7 +94,7 @@ router.get('/', (req, res) => {
       if (sortField === 'title') {
         return a.title.localeCompare(b.title) * dir;
       }
-      return (new Date(b.createdAt) - new Date(a.createdAt)) * dir;
+      return (new Date(a.createdAt) - new Date(b.createdAt)) * dir;
     });
 
     // Pagination
@@ -90,44 +114,7 @@ router.get('/', (req, res) => {
   }
 });
 
-// GET /api/todos/export?format=csv|json
-router.get('/export', (req, res) => {
-  try {
-    const todos = readTodos();
-    const format = (req.query.format || 'json').toLowerCase();
 
-    if (format === 'csv') {
-      const headers = ['id','title','description','completed','priority','category','dueDate','tags','repeat','createdAt','completedAt'];
-      const rows = todos.map(t =>
-        headers.map(h => {
-          const v = t[h];
-          if (Array.isArray(v)) return `"${v.join(';')}"`;
-          if (typeof v === 'string' && v.includes(',')) return `"${v}"`;
-          return v ?? '';
-        }).join(',')
-      );
-      const csv = [headers.join(','), ...rows].join('\n');
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename="todos.csv"');
-      return res.send(csv);
-    }
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename="todos.json"');
-    return res.json({ success: true, exportedAt: new Date().toISOString(), count: todos.length, data: todos });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// GET /api/todos/activity
-router.get('/activity', (req, res) => {
-  try {
-    res.json({ success: true, data: readActivity() });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 
 // POST /api/todos/reorder — persist drag-and-drop order
 router.post('/reorder', (req, res) => {
@@ -187,6 +174,8 @@ router.post('/', (req, res) => {
       timeEstimate: req.body.timeEstimate || null,
       timeSpent: 0,
       order: 0, // new todos go to top; reorder endpoint will fix positions
+      archived: false,
+      deletedAt: null,
     };
 
     // Prepend & fix order indices
@@ -209,13 +198,13 @@ router.put('/:id', (req, res) => {
     if (idx === -1) return res.status(404).json({ success: false, error: 'Todo not found' });
 
     const existing = todos[idx];
-    const { title, description, priority, dueDate, tags, category, completed, subtasks, notes, pinned, timeEstimate, timeSpent, repeat } = req.body;
+    const { title, description, priority, dueDate, tags, category, completed, subtasks, notes, pinned, timeEstimate, timeSpent, repeat, archived, deletedAt } = req.body;
     if (title !== undefined && !title?.trim()) return res.status(400).json({ success: false, error: 'Title cannot be empty' });
 
     const wasCompleted = existing.completed;
     const nowCompleted = completed !== undefined ? Boolean(completed) : existing.completed;
 
-    todos[idx] = {
+    const updatedTodo = {
       ...existing,
       title: title !== undefined ? title.trim() : existing.title,
       description: description !== undefined ? description.trim() : existing.description,
@@ -230,18 +219,22 @@ router.put('/:id', (req, res) => {
       repeat: repeat !== undefined ? ((['daily','weekly','monthly'].includes(repeat) ? repeat : null)) : existing.repeat,
       timeEstimate: timeEstimate !== undefined ? timeEstimate : existing.timeEstimate,
       timeSpent: timeSpent !== undefined ? timeSpent : existing.timeSpent,
+      archived: archived !== undefined ? Boolean(archived) : existing.archived,
+      deletedAt: deletedAt !== undefined ? deletedAt : existing.deletedAt,
       updatedAt: new Date().toISOString(),
       completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : existing.completedAt,
     };
+    todos[idx] = updatedTodo;
 
     // Auto-create next occurrence for recurring tasks
-    if (!wasCompleted && nowCompleted && todos[idx].repeat) {
+    if (!wasCompleted && nowCompleted && updatedTodo.repeat) {
       const next = {
-        ...todos[idx],
+        ...updatedTodo,
         id: uuidv4(),
         completed: false,
         completedAt: null,
-        dueDate: nextDueDate(todos[idx].dueDate, todos[idx].repeat),
+        dueDate: nextDueDate(updatedTodo.dueDate, updatedTodo.repeat),
+        subtasks: updatedTodo.subtasks ? updatedTodo.subtasks.map(st => ({ ...st, done: false })) : undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         order: -1,
@@ -252,10 +245,58 @@ router.put('/:id', (req, res) => {
     }
 
     writeTodos(todos);
-    if (!wasCompleted && nowCompleted) logActivity('completed', todos[idx]);
-    else logActivity('updated', todos[idx]);
+    if (!wasCompleted && nowCompleted) logActivity('completed', updatedTodo);
+    else logActivity('updated', updatedTodo);
 
-    res.json({ success: true, data: todos[idx] });
+    res.json({ success: true, data: updatedTodo });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /api/todos/bulk
+router.patch('/bulk', (req, res) => {
+  try {
+    const { action, ids, value } = req.body;
+    if (!Array.isArray(ids)) return res.status(400).json({ success: false, error: 'ids array required' });
+    
+    let todos = readTodos();
+    let newTodos = [];
+    todos = todos.map(t => {
+      if (!ids.includes(t.id)) return t;
+      
+      switch (action) {
+        case 'archive': return { ...t, archived: true };
+        case 'unarchive': return { ...t, archived: false };
+        case 'restore': return { ...t, deletedAt: null };
+        case 'complete': 
+          if (!t.completed && t.repeat) {
+            newTodos.push({
+              ...t,
+              id: uuidv4(),
+              completed: false,
+              completedAt: null,
+              dueDate: nextDueDate(t.dueDate, t.repeat),
+              subtasks: t.subtasks ? t.subtasks.map(st => ({ ...st, done: false })) : undefined,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              order: -1
+            });
+          }
+          return { ...t, completed: true, completedAt: new Date().toISOString() };
+        case 'uncomplete': return { ...t, completed: false, completedAt: null };
+        case 'priority': return { ...t, priority: value };
+        default: return t;
+      }
+    });
+    
+    if (newTodos.length > 0) {
+      todos.unshift(...newTodos);
+      todos.forEach((t, i) => { t.order = i; });
+    }
+    
+    writeTodos(todos);
+    res.json({ success: true, message: `Bulk ${action} applied` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -273,22 +314,23 @@ router.patch('/:id', (req, res) => {
     const wasCompleted = existing.completed;
     const nowCompleted = patch.completed !== undefined ? Boolean(patch.completed) : existing.completed;
 
-    todos[idx] = {
+    const updatedTodo = {
       ...existing,
       ...patch,
       completed: nowCompleted,
       updatedAt: new Date().toISOString(),
       completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : existing.completedAt,
     };
+    todos[idx] = updatedTodo;
 
     // Auto-create next occurrence for recurring tasks
-    if (!wasCompleted && nowCompleted && todos[idx].repeat) {
+    if (!wasCompleted && nowCompleted && updatedTodo.repeat) {
       const next = {
-        ...todos[idx],
+        ...updatedTodo,
         id: uuidv4(),
         completed: false,
         completedAt: null,
-        dueDate: nextDueDate(todos[idx].dueDate, todos[idx].repeat),
+        dueDate: nextDueDate(updatedTodo.dueDate, updatedTodo.repeat),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         order: -1,
@@ -299,9 +341,9 @@ router.patch('/:id', (req, res) => {
     }
 
     writeTodos(todos);
-    if (!wasCompleted && nowCompleted) logActivity('completed', todos[idx]);
+    if (!wasCompleted && nowCompleted) logActivity('completed', updatedTodo);
 
-    res.json({ success: true, data: todos[idx] });
+    res.json({ success: true, data: updatedTodo });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -312,10 +354,18 @@ router.delete('/:id', (req, res) => {
   try {
     const todos = readTodos();
     const idx = todos.findIndex(t => t.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ success: false, error: 'Todo not found' });
-    const [deleted] = todos.splice(idx, 1);
+    if (idx === -1) return res.json({ success: true, message: 'Todo already deleted' });
+    
+    if (!todos[idx].deletedAt) {
+      // Soft delete
+      todos[idx].deletedAt = new Date().toISOString();
+      logActivity('deleted', todos[idx]);
+    } else {
+      // Hard delete
+      const [deleted] = todos.splice(idx, 1);
+      logActivity('permanently_deleted', deleted);
+    }
     writeTodos(todos);
-    logActivity('deleted', deleted);
     res.json({ success: true, message: 'Todo deleted' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -328,9 +378,16 @@ router.delete('/', (req, res) => {
     const { ids } = req.body;
     let todos = readTodos();
     if (Array.isArray(ids)) {
-      todos = todos.filter(t => !ids.includes(t.id));
+      todos = todos.map(t => {
+        if (ids.includes(t.id)) {
+          if (!t.deletedAt) return { ...t, deletedAt: new Date().toISOString() };
+          return null; // mark for hard delete
+        }
+        return t;
+      }).filter(Boolean); // removes the hard-deleted ones
     } else {
-      todos = todos.filter(t => !t.completed);
+      // clear completed (soft delete)
+      todos = todos.map(t => (t.completed && !t.deletedAt) ? { ...t, deletedAt: new Date().toISOString() } : t);
     }
     writeTodos(todos);
     res.json({ success: true, message: 'Todos deleted' });
@@ -338,5 +395,6 @@ router.delete('/', (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 module.exports = router;

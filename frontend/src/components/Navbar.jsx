@@ -14,8 +14,14 @@ export default function Navbar() {
           <span className={styles.brandName}>todoapp</span>
         </Link>
         <nav className={styles.nav}>
-          <Link to="/" className={`${styles.link} ${pathname === '/' ? styles.active : ''}`}>
+          <Link to="/" className={`${styles.link} ${pathname === '/' && !new URLSearchParams(window.location.search).get('status') ? styles.active : ''}`}>
             All Todos
+          </Link>
+          <Link to="/?status=archived" className={`${styles.link} ${new URLSearchParams(window.location.search).get('status') === 'archived' ? styles.active : ''}`}>
+            Archive
+          </Link>
+          <Link to="/?status=deleted" className={`${styles.link} ${new URLSearchParams(window.location.search).get('status') === 'deleted' ? styles.active : ''}`}>
+            Trash
           </Link>
         </nav>
         <button

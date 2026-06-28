@@ -5,7 +5,6 @@ const morgan = require('morgan');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const todoRoutes = require('./routes/todos');
-const statsRoutes = require('./routes/stats');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,7 +20,6 @@ app.use('/api/', rateLimit({ windowMs: 60_000, max: 200, message: { success: fal
 
 // Routes
 app.use('/api/todos', todoRoutes);
-app.use('/api/stats', statsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '2.0.0' });

@@ -11,11 +11,11 @@
   overflow: hidden;
 }
 
-.item:hover { border-color: #3a3d52; background: var(--bg-hover); }
+.item:hover { border-color: var(--text-dim); background: var(--bg-hover); }
 .item.selected { border-color: var(--accent); background: var(--accent-soft); }
 .item.completed { opacity: 0.55; }
-.item.pinned { border-color: rgba(251,191,36,0.3); }
-.item.dragging { box-shadow: 0 8px 32px rgba(0,0,0,0.4); border-color: var(--accent); }
+.item.pinned { border-color: var(--medium-soft); }
+.item.dragging { box-shadow: var(--shadow); border-color: var(--accent); }
 
 .pinBar {
   position: absolute;
@@ -90,7 +90,7 @@
   transition: all var(--transition);
 }
 .actionBtn:hover { color: var(--text); background: var(--bg-input); border-color: var(--border); }
-.actionBtn.deleteBtn:hover { color: var(--danger); background: var(--high-soft); border-color: rgba(248,113,113,0.2); }
+.actionBtn.deleteBtn:hover { color: var(--danger); background: var(--high-soft); border-color: var(--high-soft); }
 .actionBtn.pinActive { color: var(--pin); opacity: 1 !important; }
 
 .content { cursor: pointer; flex: 1; }

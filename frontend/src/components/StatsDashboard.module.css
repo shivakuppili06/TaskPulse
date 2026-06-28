@@ -57,8 +57,14 @@
 }
 
 @media (max-width: 640px) {
-  .kpis { grid-template-columns: repeat(3, 1fr); }
-  .sections { grid-template-columns: 1fr; }
+  .kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .kpis > *:first-child {
+    grid-column: 1 / -1; /* First KPI (total tasks) spans full width */
+  }
+  .sections { grid-template-columns: 1fr; gap: 24px; }
+  .catBarTrack { flex: 1; }
 }
 
 .section {}

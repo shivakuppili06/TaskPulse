@@ -12,8 +12,14 @@ async function request(url, options = {}) {
 
 export const api = {
   getAll: (params = {}) => {
+    let finalParams = { ...params };
+    if (finalParams.sortBy && finalParams.sortBy.includes('_')) {
+      const [field, order] = finalParams.sortBy.split('_');
+      finalParams.sortBy = field;
+      finalParams.order = order;
+    }
     const qs = new URLSearchParams(
-      Object.fromEntries(Object.entries(params).filter(([, v]) => v && v !== 'all'))
+      Object.fromEntries(Object.entries(finalParams).filter(([, v]) => v && v !== 'all'))
     ).toString();
     return request(`${BASE}${qs ? '?' + qs : ''}`);
   },
@@ -23,11 +29,7 @@ export const api = {
   patch: (id, body) => request(`${BASE}/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: (id) => request(`${BASE}/${id}`, { method: 'DELETE' }),
   deleteMany: (ids) => request(BASE, { method: 'DELETE', body: JSON.stringify({ ids }) }),
+  bulkAction: (action, ids, value) => request(`${BASE}/bulk`, { method: 'PATCH', body: JSON.stringify({ action, ids, value }) }),
   clearCompleted: () => request(BASE, { method: 'DELETE', body: JSON.stringify({}) }),
-  getStats: () => request('/api/stats'),
-  getActivity: () => request(`${BASE}/activity`),
   reorder: (ids) => request(`${BASE}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) }),
-  exportTodos: (format = 'json') => {
-    window.open(`${BASE}/export?format=${format}`, '_blank');
-  },
 };

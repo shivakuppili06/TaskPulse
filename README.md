@@ -22,6 +22,13 @@ graph LR
 
 ---
 
+## Code Health & Audit
+- **Clean Architecture:** 100% of files in both `frontend` and `backend` are actively utilized with **zero dead code**.
+- **Security:** Backend features `helmet`, `express-rate-limit`, and robust CORS handling.
+- **Robust UI:** Frontend effectively handles optimistic updates, global error boundaries, and debounced operations for a highly polished UX.
+
+---
+
 ## Tech Stack
 
 | Layer     | Technology                                      |

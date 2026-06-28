@@ -114,10 +114,23 @@ export default function TodoDetailPage() {
   }
 
   async function deleteTodo() {
-    if (!confirm('Delete this task permanently?')) return;
+    const isHardDelete = !!todo?.deletedAt;
+    const msg = isHardDelete 
+      ? 'Delete this task permanently? This action cannot be undone.' 
+      : 'Move this task to Trash?';
+
+    if (!confirm(msg)) return;
     try {
       await api.delete(id);
-      toast('Task deleted', 'success');
+      toast(isHardDelete ? 'Task permanently deleted' : 'Task moved to Trash', 'success');
+      navigate('/');
+    } catch (e) { setError(e.message); toast(e.message, 'error'); }
+  }
+
+  async function restoreTodo() {
+    try {
+      await api.bulkAction('restore', [id]);
+      toast('Task restored', 'success');
       navigate('/');
     } catch (e) { setError(e.message); toast(e.message, 'error'); }
   }
@@ -145,7 +158,7 @@ export default function TodoDetailPage() {
   const progress = totalSubtasks ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
 
   return (
-    <main className={`page-container ${styles.page}`}>
+    <main className={`page-container fade-in ${styles.page}`}>
       {/* Breadcrumb */}
       <button className={styles.backBtn} onClick={() => navigate('/')}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -173,13 +186,26 @@ export default function TodoDetailPage() {
             )}
           </div>
           <div className={styles.heroActions}>
-            <button
-              className={`${styles.completeBtn} ${todo.completed ? styles.completedBtn : ''}`}
-              onClick={toggleComplete}
-            >
-              {todo.completed ? '↩ Mark Incomplete' : '✓ Mark Complete'}
-            </button>
-            <button className={styles.deleteBtn} onClick={deleteTodo}>Delete</button>
+            {todo.deletedAt ? (
+              <>
+                <button className={styles.completeBtn} onClick={restoreTodo}>
+                  🔄 Restore Task
+                </button>
+                <button className={styles.deleteBtn} onClick={deleteTodo}>
+                  Delete Permanently
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className={`${styles.completeBtn} ${todo.completed ? styles.completedBtn : ''}`}
+                  onClick={toggleComplete}
+                >
+                  {todo.completed ? '↩ Mark Incomplete' : '✓ Mark Complete'}
+                </button>
+                <button className={styles.deleteBtn} onClick={deleteTodo}>Delete</button>
+              </>
+            )}
           </div>
         </div>
 

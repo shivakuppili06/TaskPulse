@@ -21,7 +21,20 @@ function writeJSON(file, data) {
 }
 
 module.exports = {
-  readTodos: () => readJSON(TODOS_FILE, []),
+  readTodos: () => {
+    const todos = readJSON(TODOS_FILE, []);
+    const now = Date.now();
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const kept = todos.filter(t => {
+      if (!t.deletedAt) return true;
+      const age = now - new Date(t.deletedAt).getTime();
+      return age < THIRTY_DAYS_MS;
+    });
+    if (kept.length !== todos.length) {
+      writeJSON(TODOS_FILE, kept);
+    }
+    return kept;
+  },
   writeTodos: (d) => writeJSON(TODOS_FILE, d),
   readActivity: () => readJSON(ACTIVITY_FILE, []),
   writeActivity: (d) => writeJSON(ACTIVITY_FILE, d),

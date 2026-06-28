@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   DndContext,
   closestCenter,
@@ -36,10 +36,20 @@ const PRIORITIES = [
 
 const SORTS = [
   { label: 'Custom order', value: 'order' },
-  { label: 'Newest first', value: 'createdAt' },
-  { label: 'Due date', value: 'dueDate' },
-  { label: 'Priority', value: 'priority' },
-  { label: 'Title A–Z', value: 'title' },
+  { label: 'Newest first', value: 'createdAt_desc' },
+  { label: 'Oldest first', value: 'createdAt_asc' },
+  { label: 'Due date', value: 'dueDate_asc' },
+  { label: 'Priority', value: 'priority_asc' },
+  { label: 'Title A–Z', value: 'title_asc' },
+];
+
+const CATEGORIES = ['All', 'General', 'Work', 'Personal', 'Health', 'Home'];
+
+const DATES = [
+  { label: 'Any', value: 'all' },
+  { label: 'Overdue', value: 'overdue' },
+  { label: 'Today', value: 'today' },
+  { label: 'Upcoming', value: 'upcoming' },
 ];
 
 export default function TodoListPage() {
@@ -56,9 +66,18 @@ export default function TodoListPage() {
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('viewMode') || 'list');
   const [showSearch, setShowSearch] = useState(false);
 
+  const location = useLocation();
+  const queryStatus = new URLSearchParams(location.search).get('status');
+  
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('all');
+  const [status, setStatus] = useState(queryStatus || 'all');
+  
+  useEffect(() => {
+    setStatus(queryStatus || 'all');
+  }, [queryStatus]);
   const [priority, setPriority] = useState('all');
+  const [category, setCategory] = useState('all');
+  const [dueDate, setDueDate] = useState('all');
   const [sortBy, setSortBy] = useState('order');
 
   // Pending undo deletes: { id, todo, timerId, index }
@@ -69,7 +88,7 @@ export default function TodoListPage() {
   const fetchTodos = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await api.getAll({ search, status, priority, sortBy });
+      const data = await api.getAll({ search, status, priority, category, dueDate, sortBy });
       setTodos(data.data);
       setError(null);
     } catch (e) {
@@ -77,7 +96,7 @@ export default function TodoListPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, status, priority, sortBy]);
+  }, [search, status, priority, category, dueDate, sortBy]);
 
   useEffect(() => {
     const timer = setTimeout(fetchTodos, search ? 300 : 0);
@@ -141,46 +160,77 @@ export default function TodoListPage() {
     }
   }
 
-  function handleDelete(id) {
+  async function handleDelete(id) {
     const idx = todos.findIndex(t => t.id === id);
     const todo = todos[idx];
     if (!todo) return;
 
+    const isHardDelete = !!todo.deletedAt;
+
+    // Optimistically update UI
     setTodos(prev => prev.filter(t => t.id !== id));
     setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
 
-    const timerId = setTimeout(async () => {
-      delete pendingDeletes.current[id];
+    if (isHardDelete) {
+      // Hard delete from Trash: use 5s timer since it's destructive and cannot be undone in DB
+      const timerId = setTimeout(async () => {
+        delete pendingDeletes.current[id];
+        try {
+          await api.delete(id);
+        } catch (e) {
+          toast(e.message, 'error');
+          fetchTodos();
+        }
+      }, 5000);
+
+      pendingDeletes.current[id] = { todo, idx, timerId };
+
+      toast(
+        `"${todo.title}" permanently deleted`,
+        'info',
+        5000,
+        {
+          label: 'Undo',
+          onClick: () => {
+            const pending = pendingDeletes.current[id];
+            if (!pending) return;
+            clearTimeout(pending.timerId);
+            delete pendingDeletes.current[id];
+            setTodos(prev => {
+              const copy = [...prev];
+              copy.splice(Math.min(pending.idx, copy.length), 0, pending.todo);
+              return copy;
+            });
+            toast('Delete undone', 'success');
+          },
+        }
+      );
+    } else {
+      // Soft delete: call backend immediately to keep database and Trash view in sync
       try {
         await api.delete(id);
+        toast(
+          `"${todo.title}" moved to Trash`,
+          'info',
+          5000,
+          {
+            label: 'Undo',
+            onClick: async () => {
+              try {
+                await api.bulkAction('restore', [id]);
+                fetchTodos();
+                toast('Task restored', 'success');
+              } catch (e) {
+                toast(e.message, 'error');
+              }
+            },
+          }
+        );
       } catch (e) {
         toast(e.message, 'error');
         fetchTodos();
       }
-    }, 5000);
-
-    pendingDeletes.current[id] = { todo, idx, timerId };
-
-    toast(
-      `"${todo.title}" deleted`,
-      'info',
-      5000,
-      {
-        label: 'Undo',
-        onClick: () => {
-          const pending = pendingDeletes.current[id];
-          if (!pending) return;
-          clearTimeout(pending.timerId);
-          delete pendingDeletes.current[id];
-          setTodos(prev => {
-            const copy = [...prev];
-            copy.splice(Math.min(pending.idx, copy.length), 0, pending.todo);
-            return copy;
-          });
-          toast('Delete undone', 'success');
-        },
-      }
-    );
+    }
   }
 
   async function handleTogglePin(id) {
@@ -206,6 +256,17 @@ export default function TodoListPage() {
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function handleEmptyTrash() {
+    if (!todos.length) return;
+    if (!confirm('Permanently delete all items in Trash? This action cannot be undone.')) return;
+    try {
+      const ids = todos.map(t => t.id);
+      await api.deleteMany(ids);
+      setTodos([]);
+      toast('Trash emptied', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
   async function handleClearCompleted() {
     const count = todos.filter(t => t.completed).length;
     if (!count) return;
@@ -214,6 +275,21 @@ export default function TodoListPage() {
       await api.clearCompleted();
       setTodos(prev => prev.filter(t => !t.completed));
       toast(`${count} completed task(s) cleared`, 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function handleBulkAction(action, value = null, targetIds = null) {
+    const ids = targetIds || Array.from(selected);
+    if (!ids.length) return;
+    try {
+      if (action === 'delete') {
+        await api.deleteMany(ids);
+      } else {
+        await api.bulkAction(action, ids, value);
+      }
+      toast(`${action === 'archive' || action === 'unarchive' || action === 'restore' || action === 'delete' ? action : 'Bulk action'} applied`, 'success');
+      if (!targetIds) setSelected(new Set());
+      fetchTodos();
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -263,14 +339,16 @@ export default function TodoListPage() {
   const overdueCount = todos.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < new Date()).length;
 
   // Is any filter active?
-  const hasActiveFilter = search || status !== 'all' || priority !== 'all' || sortBy !== 'order';
+  const hasActiveFilter = search || priority !== 'all' || category !== 'all' || dueDate !== 'all' || sortBy !== 'order' || (status !== 'all' && status !== 'archived' && status !== 'deleted');
 
   return (
-    <main className={`page-container ${styles.page}`}>
+    <main className={`page-container fade-in ${styles.page}`}>
       {/* Header */}
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>My Tasks</h1>
+          <h1 className={styles.title}>
+            {status === 'archived' ? 'Archive' : status === 'deleted' ? 'Trash' : 'My Tasks'}
+          </h1>
           <div className={styles.headerMeta}>
             <span className={styles.statChip}>{activeCount} active</span>
             {completedCount > 0 && <span className={`${styles.statChip} ${styles.done}`}>{completedCount} done</span>}
@@ -315,7 +393,9 @@ export default function TodoListPage() {
       </div>
 
       {/* Stats Dashboard */}
-      <StatsDashboard todos={todos} />
+      {status !== 'archived' && status !== 'deleted' && (
+        <StatsDashboard todos={todos} />
+      )}
 
       {/* Spotlight search overlay */}
       {showSearch && (
@@ -363,6 +443,18 @@ export default function TodoListPage() {
                 ))}
               </div>
               <div className={styles.spotlightFilterGroup}>
+                <span className={styles.spotlightFilterLabel}>Category</span>
+                <select className={styles.sortSelect} value={category} onChange={e => setCategory(e.target.value)}>
+                  {CATEGORIES.map(c => <option key={c} value={c === 'All' ? 'all' : c}>{c}</option>)}
+                </select>
+              </div>
+              <div className={styles.spotlightFilterGroup}>
+                <span className={styles.spotlightFilterLabel}>Due</span>
+                <select className={styles.sortSelect} value={dueDate} onChange={e => setDueDate(e.target.value)}>
+                  {DATES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </div>
+              <div className={styles.spotlightFilterGroup}>
                 <span className={styles.spotlightFilterLabel}>Sort</span>
                 <select className={styles.sortSelect} value={sortBy} onChange={e => setSortBy(e.target.value)}>
                   {SORTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -381,8 +473,49 @@ export default function TodoListPage() {
             <span>{selected.size > 0 ? `${selected.size} selected` : 'Select all'}</span>
           </label>
           <div className={styles.bulkActions}>
-            {selected.size > 0 && <button className={styles.dangerBtn} onClick={handleDeleteSelected}>Delete selected ({selected.size})</button>}
-            {completedCount > 0 && <button className={styles.ghostBtn} onClick={handleClearCompleted}>Clear completed ({completedCount})</button>}
+            {selected.size > 0 && status === 'deleted' && (
+              <>
+                <button className={styles.ghostBtn} onClick={() => handleBulkAction('restore')}>Restore Selected</button>
+                <button className={styles.dangerBtn} onClick={handleDeleteSelected}>Permanently Delete ({selected.size})</button>
+              </>
+            )}
+            
+            {selected.size > 0 && status !== 'deleted' && (
+              <>
+                <button className={styles.ghostBtn} onClick={() => handleBulkAction('complete')}>Complete</button>
+                {status === 'archived' ? (
+                  <button className={styles.ghostBtn} onClick={() => handleBulkAction('unarchive')}>Unarchive</button>
+                ) : (
+                  <button className={styles.ghostBtn} onClick={() => handleBulkAction('archive')}>Archive</button>
+                )}
+                
+                <select 
+                  className={styles.bulkSelect} 
+                  onChange={(e) => {
+                    if(e.target.value) {
+                      handleBulkAction('priority', e.target.value);
+                      e.target.value = "";
+                    }
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Set Priority...</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+
+                <button className={styles.dangerBtn} onClick={handleDeleteSelected}>Delete ({selected.size})</button>
+              </>
+            )}
+
+            {selected.size === 0 && completedCount > 0 && status !== 'deleted' && status !== 'archived' && (
+              <button className={styles.ghostBtn} onClick={handleClearCompleted}>Clear completed ({completedCount})</button>
+            )}
+
+            {selected.size === 0 && status === 'deleted' && (
+              <button className={styles.dangerBtn} onClick={handleEmptyTrash}>Empty Trash</button>
+            )}
           </div>
         </div>
       )}
@@ -395,12 +528,33 @@ export default function TodoListPage() {
           <span>⚠ {error}</span>
           <button onClick={fetchTodos}>Retry</button>
         </div>
-      ) : todos.length === 0 ? (
+      ) : displayTodos.length === 0 ? (
         <div className={styles.empty}>
           <div className={styles.emptyIcon}>◎</div>
-          <p className={styles.emptyTitle}>{search ? 'No tasks match your search' : 'No tasks yet'}</p>
-          <p className={styles.emptyHint}>{search ? 'Try different keywords or clear the search' : 'Click New Task to get started'}</p>
-          {!search && <button className={styles.addBtn} onClick={() => setShowModal(true)}>+ New Task</button>}
+          <p className={styles.emptyTitle}>
+            {hasActiveFilter 
+              ? 'No tasks match your filters' 
+              : status === 'archived' 
+                ? 'Archive is empty' 
+                : status === 'deleted' 
+                  ? 'Trash is empty' 
+                  : 'No tasks yet'}
+          </p>
+          <p className={styles.emptyHint}>
+            {hasActiveFilter 
+              ? 'Try different keywords or clear the filters' 
+              : status === 'archived' 
+                ? 'Archived tasks will appear here' 
+                : status === 'deleted' 
+                  ? 'Deleted tasks will appear here for 30 days' 
+                  : 'Click New Task to get started'}
+          </p>
+          {!hasActiveFilter && status !== 'deleted' && status !== 'archived' && (
+            <button className={styles.addBtn} onClick={() => setShowModal(true)}>+ New Task</button>
+          )}
+          {hasActiveFilter && (
+            <button className={styles.ghostBtn} onClick={() => { setSearch(''); setStatus('all'); setPriority('all'); setCategory('all'); setDueDate('all'); }}>Clear filters</button>
+          )}
         </div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -416,8 +570,10 @@ export default function TodoListPage() {
                   onToggle={() => handleToggle(todo.id, !todo.completed)}
                   onEdit={() => { setEditingTodo(todo); setShowModal(true); }}
                   onDelete={() => handleDelete(todo.id)}
+                  onArchive={() => handleBulkAction(todo.archived ? 'unarchive' : 'archive', null, [todo.id])}
+                  onRestore={() => handleBulkAction('restore', null, [todo.id])}
                   onView={() => navigate(`/todo?id=${todo.id}`)}
-                  onPin={() => handleTogglePin(todo.id)}
+                  onPin={() => handleTogglePin(todo.id, todo.pinned)}
                   style={{ animationDelay: `${Math.min(i * 25, 300)}ms` }}
                 />
               ))}
