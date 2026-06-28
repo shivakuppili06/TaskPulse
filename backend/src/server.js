@@ -16,7 +16,7 @@ app.use(morgan('dev'));
 app.use(express.json());
 
 // Rate limiting
-app.use('/api/', rateLimit({ windowMs: 60_000, max: 200, message: { success: false, error: 'Too many requests' } }));
+app.use('/api/', rateLimit({ windowMs: 60_000, max: 1000, message: { success: false, error: 'Too many requests' } }));
 
 // Routes
 app.use('/api/todos', todoRoutes);

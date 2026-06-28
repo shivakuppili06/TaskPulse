@@ -137,6 +137,29 @@ router.post('/reorder', (req, res) => {
   }
 });
 
+// GET /api/todos/stats
+router.get('/stats', (req, res) => {
+  try {
+    const todos = readTodos();
+    const active = todos.filter(t => !t.completed && !t.archived && !t.deletedAt).length;
+    const completed = todos.filter(t => t.completed && !t.archived && !t.deletedAt).length;
+    const archived = todos.filter(t => t.archived && !t.deletedAt).length;
+    const deleted = todos.filter(t => !!t.deletedAt).length;
+    res.json({
+      success: true,
+      data: {
+        total: active + completed,
+        active,
+        completed,
+        archived,
+        deleted
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/todos/activity
 router.get('/activity', (req, res) => {
   try {

@@ -33,5 +33,5 @@ export const api = {
   clearCompleted: () => request(BASE, { method: 'DELETE', body: JSON.stringify({}) }),
   reorder: (ids) => request(`${BASE}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) }),
   getActivity: () => request(`${BASE}/activity`),
-  getStats: () => request('/api/stats'),
+  getStats: () => request(`${BASE}/stats`),
 };

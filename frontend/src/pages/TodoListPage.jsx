@@ -107,12 +107,15 @@ export default function TodoListPage({ mode = 'tasks' }) {
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('viewMode') || 'list');
   const [showSearch, setShowSearch] = useState(false);
 
+  const location = useLocation();
+  const queryStatus = new URLSearchParams(location.search).get('status');
+
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState(getStatusFromMode(mode));
+  const [status, setStatus] = useState(queryStatus || getStatusFromMode(mode));
   
   useEffect(() => {
-    setStatus(getStatusFromMode(mode));
-  }, [mode]);
+    setStatus(queryStatus || getStatusFromMode(mode));
+  }, [mode, queryStatus]);
   const [priority, setPriority] = useState('all');
   const [category, setCategory] = useState('all');
   const [dueDate, setDueDate] = useState('all');

@@ -25,20 +25,13 @@ export default function Sidebar() {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const res = await api.getAll({ limit: 9999 });
-        const allTodos = res.data || [];
-        
-        const active = allTodos.filter(t => !t.completed && !t.archived && !t.deletedAt).length;
-        
-        const [archivedRes, deletedRes] = await Promise.all([
-          api.getAll({ status: 'archived', limit: 9999 }),
-          api.getAll({ status: 'deleted', limit: 9999 })
-        ]);
+        const res = await api.getStats();
+        const s = res.data || { total: 0, active: 0, completed: 0, archived: 0, deleted: 0 };
         
         setCounts({
-          active,
-          archived: archivedRes.data?.length || 0,
-          deleted: deletedRes.data?.length || 0
+          active: s.active,
+          archived: s.archived,
+          deleted: s.deleted
         });
       } catch (e) {
         console.error('Failed to fetch sidebar counts:', e);
@@ -46,7 +39,7 @@ export default function Sidebar() {
     };
 
     fetchCounts();
-    const interval = setInterval(fetchCounts, 5000);
+    const interval = setInterval(fetchCounts, 15000);
     return () => clearInterval(interval);
   }, [pathname]);
 
