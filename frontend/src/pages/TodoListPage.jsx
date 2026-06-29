@@ -104,7 +104,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
   const [showModal, setShowModal] = useState(false);
   const [editingTodo, setEditingTodo] = useState(null);
   const [selected, setSelected] = useState(new Set());
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('viewMode') || 'list');
+  const [viewMode] = useState('board');
   const [showSearch, setShowSearch] = useState(false);
 
   const location = useLocation();
@@ -212,19 +212,33 @@ export default function TodoListPage({ mode = 'tasks' }) {
     }
   }
 
-  async function handleDelete(id) {
+  async function handleDelete(id, isHardDelete = false) {
     setActiveMenuId(null);
-    if (!window.confirm('Delete this task?')) return;
+    const msg = isHardDelete 
+      ? 'Delete this task permanently? This action cannot be undone.' 
+      : 'Move this task to Trash?';
+    if (!window.confirm(msg)) return;
     const oldTodos = [...todos];
     setTodos(prev => prev.filter(t => t.id !== id));
     try {
       await api.delete(id);
-      toast('Task deleted', 'success');
+      toast(isHardDelete ? 'Task permanently deleted' : 'Task moved to Trash', 'success');
     } catch (err) {
       setTodos(oldTodos);
       toast(err.message, 'error');
     }
   }
+
+  const handleRestore = async (todo) => {
+    setActiveMenuId(null);
+    try {
+      await api.bulkAction('restore', [todo.id]);
+      setTodos(prev => prev.filter(t => t.id !== todo.id));
+      toast('Task restored', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
 
   const handleDuplicate = async (todo) => {
     setActiveMenuId(null);
@@ -497,18 +511,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
             <Search size={18} /> {hasActiveFilter && <span className={styles.filterDot} />}
           </button>
 
-          {/* List/Grid/Board Toggles */}
-          <div className={styles.viewToggle}>
-            <button className={`${styles.viewBtn} ${viewMode === 'list' ? styles.viewActive : ''}`} onClick={() => setView('list')} title="List view">
-              <List size={16} />
-            </button>
-            <button className={`${styles.viewBtn} ${viewMode === 'grid' ? styles.viewActive : ''}`} onClick={() => setView('grid')} title="Grid view">
-              <Grid size={16} />
-            </button>
-            <button className={`${styles.viewBtn} ${viewMode === 'board' ? styles.viewActive : ''}`} onClick={() => setView('board')} title="Board view">
-              <Plus size={16} style={{ transform: 'rotate(45deg)' }} />
-            </button>
-          </div>
+
 
           <button className={styles.addBtn} onClick={() => { setEditingTodo(null); setShowModal(true); }}>
             <Plus size={16} /> <span className={styles.addBtnText}>New Task</span>
@@ -591,7 +594,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
             <button className={styles.ghostBtn} onClick={() => { setSearch(''); setStatus('all'); setPriority('all'); setCategory('all'); setDueDate('all'); }}>Clear filters</button>
           )}
         </div>
-      ) : viewMode === 'board' ? (
+      ) : (
         /* Highly Polished Board columns */
         <div className={styles.board}>
           {BOARD_COLUMNS.map(col => {
@@ -617,7 +620,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
                     <span className={styles.boardCountBadge}>{colTodos.length}</span>
                   </div>
                   {col.id === 'todo' && status !== 'deleted' && status !== 'archived' && (
-                    <button className={styles.boardAddColBtn} onClick={() => { setTargetColumn(col.id); setEditingTodo(null); setShowModal(true); }}>
+                    <button className={styles.boardAddColBtn} onClick={() => { setEditingTodo(null); setShowModal(true); }}>
                       <Plus size={16} />
                     </button>
                   )}
@@ -679,10 +682,24 @@ export default function TodoListPage({ mode = 'tasks' }) {
                               {activeMenuId === todo.id && (
                                 <div ref={menuRef} className={styles.dropdownMenu}>
                                   <button onClick={() => navigate(`/todo?id=${todo.id}`)}><Eye size={12} style={{ marginRight: '8px' }} /> View Details</button>
-                                  <button onClick={() => { setEditingTodo(todo); setShowModal(true); }}><Edit3 size={12} style={{ marginRight: '8px' }} /> Edit Task</button>
-                                  <button onClick={() => handleDuplicate(todo)}><Copy size={12} style={{ marginRight: '8px' }} /> Duplicate</button>
-                                  <button onClick={() => handleArchive(todo)}><Archive size={12} style={{ marginRight: '8px' }} /> Archive</button>
-                                  <button onClick={() => handleDelete(todo.id)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
+                                  {status === 'deleted' ? (
+                                    <>
+                                      <button onClick={() => handleRestore(todo)}><RotateCcw size={12} style={{ marginRight: '8px' }} /> Restore</button>
+                                      <button onClick={() => handleDelete(todo.id, true)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete Permanently</button>
+                                    </>
+                                  ) : status === 'archived' ? (
+                                    <>
+                                      <button onClick={() => handleArchive(todo)}><Archive size={12} style={{ marginRight: '8px' }} /> Unarchive</button>
+                                      <button onClick={() => handleDelete(todo.id, false)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => { setEditingTodo(todo); setShowModal(true); }}><Edit3 size={12} style={{ marginRight: '8px' }} /> Edit Task</button>
+                                      <button onClick={() => handleDuplicate(todo)}><Copy size={12} style={{ marginRight: '8px' }} /> Duplicate</button>
+                                      <button onClick={() => handleArchive(todo)}><Archive size={12} style={{ marginRight: '8px' }} /> Archive</button>
+                                      <button onClick={() => handleDelete(todo.id, false)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -748,30 +765,6 @@ export default function TodoListPage({ mode = 'tasks' }) {
             );
           })}
         </div>
-      ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={displayTodos.map(t => t.id)} strategy={verticalListSortingStrategy}>
-            <div className={viewMode === 'grid' ? styles.grid : styles.list}>
-              {displayTodos.map((todo, i) => (
-                <TodoItem
-                  key={todo.id}
-                  todo={todo}
-                  viewMode={viewMode}
-                  selected={selected.has(todo.id)}
-                  onSelect={() => handleSelect(todo.id)}
-                  onToggle={() => handleToggle(todo.id, !todo.completed)}
-                  onEdit={() => { setEditingTodo(todo); setShowModal(true); }}
-                  onDelete={() => handleDelete(todo.id)}
-                  onArchive={() => handleBulkAction(todo.archived ? 'unarchive' : 'archive', null, [todo.id])}
-                  onRestore={() => handleBulkAction('restore', null, [todo.id])}
-                  onView={() => navigate(`/todo?id=${todo.id}`)}
-                  onPin={() => handleBulkAction(todo.pinned ? 'unpin' : 'pin', null, [todo.id])}
-                  style={{ animationDelay: `${Math.min(i * 25, 300)}ms` }}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
       )}
 
       {showModal && (
@@ -785,11 +778,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
                 setTodos(prev => prev.map(t => t.id === editingTodo.id ? res.data : t));
                 toast('Task updated', 'success');
               } else {
-                const res = await api.create({
-                  ...data,
-                  kanbanStatus: targetColumn,
-                  completed: targetColumn === 'completed'
-                });
+                const res = await api.create(data);
                 setTodos(prev => [res.data, ...prev]);
                 toast('Task created!', 'success');
               }

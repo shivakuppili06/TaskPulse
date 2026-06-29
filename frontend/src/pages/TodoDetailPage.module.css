@@ -119,24 +119,65 @@
 }
 
 .completeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 16px;
   border-radius: var(--radius);
   font-size: 13px;
   font-weight: 600;
   color: #fff;
   background: var(--accent);
+  border: 1px solid transparent;
+  cursor: pointer;
   transition: all var(--transition);
 }
 
-.completeBtn:hover { background: var(--accent-hover); }
+.completeBtn:hover {
+  background: var(--accent-hover);
+}
 
 .completeBtn.completedBtn {
-  background: rgba(74,222,128,0.1);
-  color: var(--success);
-  border: 1px solid rgba(74,222,128,0.2);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.editBtn, .archiveBtn, .restoreBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.editBtn:hover, .archiveBtn:hover, .restoreBtn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--text-dim);
+}
+
+.statusBadge {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
 }
 
 .deleteBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 14px;
   border-radius: var(--radius);
   font-size: 13px;
@@ -144,6 +185,7 @@
   color: var(--danger);
   background: var(--high-soft);
   border: 1px solid rgba(248,113,113,0.2);
+  cursor: pointer;
   transition: all var(--transition);
 }
 
