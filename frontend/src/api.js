@@ -1,4 +1,4 @@
-const BASE = '/api/todos';
+const BASE = 'https://task-pulse-beige.vercel.app/api/todos';
 
 async function request(url, options = {}) {
   const res = await fetch(url, {
