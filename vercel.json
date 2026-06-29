@@ -1,0 +1,9 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/((?!assets/|api/).*)",
+      "destination": "/frontend/index.html"
+    }
+  ]
+}

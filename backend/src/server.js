@@ -34,7 +34,16 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-const server = app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+const { initDb } = require('./db');
+
+const server = app.listen(PORT, async () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  try {
+    await initDb();
+  } catch (err) {
+    console.error('Failed to initialize database on startup:', err);
+  }
+});
 
 // Graceful shutdown
 function shutdown(signal) {

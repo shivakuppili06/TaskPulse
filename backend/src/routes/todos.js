@@ -1,14 +1,8 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { readTodos, writeTodos, readActivity, writeActivity } = require('../store');
+const { query, pool } = require('../db');
 
 const router = express.Router();
-
-function logActivity(action, todo) {
-  const log = readActivity();
-  log.unshift({ id: uuidv4(), action, todoId: todo.id, todoTitle: todo.title, timestamp: new Date().toISOString() });
-  writeActivity(log.slice(0, 100));
-}
 
 /** Compute the next due date for a recurring task */
 function nextDueDate(dueDate, repeat) {
@@ -21,92 +15,95 @@ function nextDueDate(dueDate, repeat) {
 }
 
 // GET /api/todos
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    let todos = readTodos();
+    // Automatically prune soft-deleted todos older than 30 days
+    await query("DELETE FROM todos WHERE \"deletedAt\" < NOW() - INTERVAL '30 days'");
+
+    let queryText = 'SELECT * FROM todos WHERE 1=1';
+    let params = [];
     const { status, priority, search, sortBy, order, category, tag } = req.query;
 
     if (status === 'deleted') {
-      todos = todos.filter(t => !!t.deletedAt);
+      queryText += ' AND "deletedAt" IS NOT NULL';
     } else if (status === 'archived') {
-      todos = todos.filter(t => t.archived && !t.deletedAt);
+      queryText += ' AND archived = true AND "deletedAt" IS NULL';
     } else {
-      // For all non-deleted/non-archived views, filter out deleted and archived
-      todos = todos.filter(t => !t.deletedAt && !t.archived);
+      queryText += ' AND archived = false AND "deletedAt" IS NULL';
       
       if (status === 'active') {
-        todos = todos.filter(t => !t.completed);
+        queryText += ' AND completed = false';
       } else if (status === 'completed') {
-        todos = todos.filter(t => t.completed);
+        queryText += ' AND completed = true';
       }
     }
+
     if (priority && priority !== 'all') {
-      todos = todos.filter(t => t.priority === priority);
+      params.push(priority);
+      queryText += ` AND priority = $${params.length}`;
     }
+
     if (category && category !== 'all') {
-      todos = todos.filter(t => t.category === category);
+      params.push(category);
+      queryText += ` AND category = $${params.length}`;
     }
+
     if (tag) {
-      todos = todos.filter(t => t.tags?.some(tg => tg.toLowerCase() === tag.toLowerCase()));
+      params.push(tag);
+      queryText += ` AND EXISTS (SELECT 1 FROM unnest(tags) AS tg WHERE LOWER(tg) = LOWER($${params.length}))`;
     }
+
     if (req.query.dueDate && req.query.dueDate !== 'all') {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      todos = todos.filter(t => {
-        if (!t.dueDate) return false;
-        const d = new Date(t.dueDate);
-        if (req.query.dueDate === 'overdue') return d < today;
-        if (req.query.dueDate === 'today') return d >= today && d < tomorrow;
-        if (req.query.dueDate === 'upcoming') return d >= tomorrow;
-        return true;
-      });
+      if (req.query.dueDate === 'overdue') {
+        queryText += ' AND "dueDate" < CURRENT_DATE';
+      } else if (req.query.dueDate === 'today') {
+        queryText += ' AND "dueDate" >= CURRENT_DATE AND "dueDate" < CURRENT_DATE + INTERVAL \'1 day\'';
+      } else if (req.query.dueDate === 'upcoming') {
+        queryText += ' AND "dueDate" >= CURRENT_DATE + INTERVAL \'1 day\'';
+      }
     }
+
     if (search) {
-      const q = search.toLowerCase();
-      todos = todos.filter(t =>
-        t.title.toLowerCase().includes(q) ||
-        (t.description && t.description.toLowerCase().includes(q)) ||
-        (t.tags && t.tags.some(tg => tg.toLowerCase().includes(q))) ||
-        (t.category && t.category.toLowerCase().includes(q))
-      );
+      params.push(`%${search}%`);
+      const searchIdx = params.length;
+      queryText += ` AND (title ILIKE $${searchIdx} OR description ILIKE $${searchIdx} OR category ILIKE $${searchIdx} OR EXISTS (SELECT 1 FROM unnest(tags) AS tg WHERE LOWER(tg) LIKE LOWER($${searchIdx})))`;
     }
 
     const sortField = sortBy || 'order';
-    const dir = order === 'asc' ? 1 : -1;
-    todos.sort((a, b) => {
-      if (sortField === 'order') {
-        // Use custom order field; fall back to createdAt for items without order
-        const oa = a.order ?? Number.MAX_SAFE_INTEGER;
-        const ob = b.order ?? Number.MAX_SAFE_INTEGER;
-        if (oa !== ob) return oa - ob;
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      }
-      if (sortField === 'dueDate') {
-        const da = a.dueDate ? new Date(a.dueDate) : new Date('9999');
-        const db = b.dueDate ? new Date(b.dueDate) : new Date('9999');
-        return (da - db) * dir;
-      }
-      if (sortField === 'priority') {
-        const p = { high: 0, medium: 1, low: 2 };
-        return (p[a.priority] - p[b.priority]) * dir;
-      }
-      if (sortField === 'title') {
-        return a.title.localeCompare(b.title) * dir;
-      }
-      return (new Date(a.createdAt) - new Date(b.createdAt)) * dir;
-    });
+    const dir = order === 'asc' ? 'ASC' : 'DESC';
 
-    // Pagination
+    if (sortField === 'order') {
+      queryText += ` ORDER BY "order" ASC, "createdAt" DESC`;
+    } else if (sortField === 'dueDate') {
+      queryText += ` ORDER BY "dueDate" ${dir} NULLS LAST`;
+    } else if (sortField === 'priority') {
+      queryText += ` ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END ${dir}`;
+    } else if (sortField === 'title') {
+      queryText += ` ORDER BY title ${dir}`;
+    } else {
+      queryText += ` ORDER BY "createdAt" ${dir}`;
+    }
+
+    // Get overall count for pagination
+    const countQueryText = `SELECT COUNT(*) FROM (${queryText}) AS temp`;
+    const countRes = await query(countQueryText, params);
+    const total = parseInt(countRes.rows[0].count);
+
+    // Apply pagination limit and offset
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
-    const total = todos.length;
-    const start = (page - 1) * limit;
-    const paginated = todos.slice(start, start + limit);
+    const offset = (page - 1) * limit;
+
+    params.push(limit);
+    queryText += ` LIMIT $${params.length}`;
+    params.push(offset);
+    queryText += ` OFFSET $${params.length}`;
+
+    const result = await query(queryText, params);
 
     res.json({
       success: true,
-      data: paginated,
+      data: result.rows,
       meta: { total, page, limit, pages: Math.ceil(total / limit) }
     });
   } catch (err) {
@@ -114,45 +111,50 @@ router.get('/', (req, res) => {
   }
 });
 
-
-
 // POST /api/todos/reorder — persist drag-and-drop order
-router.post('/reorder', (req, res) => {
+router.post('/reorder', async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids)) return res.status(400).json({ success: false, error: 'ids must be an array' });
 
-    const todos = readTodos();
-    const orderMap = {};
-    ids.forEach((id, i) => { orderMap[id] = i; });
-
-    const updated = todos.map(t => ({
-      ...t,
-      order: orderMap[t.id] !== undefined ? orderMap[t.id] : (t.order ?? 9999),
-    }));
-    writeTodos(updated);
-    res.json({ success: true, message: 'Order saved' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (let i = 0; i < ids.length; i++) {
+        await client.query('UPDATE todos SET "order" = $1 WHERE id = $2', [i, ids[i]]);
+      }
+      await client.query('COMMIT');
+      res.json({ success: true, message: 'Order saved' });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // GET /api/todos/stats
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
-    const todos = readTodos();
-    const active = todos.filter(t => !t.completed && !t.archived && !t.deletedAt).length;
-    const completed = todos.filter(t => t.completed && !t.archived && !t.deletedAt).length;
-    const archived = todos.filter(t => t.archived && !t.deletedAt).length;
-    const deleted = todos.filter(t => !!t.deletedAt).length;
+    const active = (await query('SELECT COUNT(*) FROM todos WHERE completed = false AND archived = false AND "deletedAt" IS NULL')).rows[0].count;
+    const completed = (await query('SELECT COUNT(*) FROM todos WHERE completed = true AND archived = false AND "deletedAt" IS NULL')).rows[0].count;
+    const archived = (await query('SELECT COUNT(*) FROM todos WHERE archived = true AND "deletedAt" IS NULL')).rows[0].count;
+    const deleted = (await query('SELECT COUNT(*) FROM todos WHERE "deletedAt" IS NOT NULL')).rows[0].count;
+
+    const activeCount = parseInt(active);
+    const completedCount = parseInt(completed);
+
     res.json({
       success: true,
       data: {
-        total: active + completed,
-        active,
-        completed,
-        archived,
-        deleted
+        total: activeCount + completedCount,
+        active: activeCount,
+        completed: completedCount,
+        archived: parseInt(archived),
+        deleted: parseInt(deleted)
       }
     });
   } catch (err) {
@@ -161,27 +163,28 @@ router.get('/stats', (req, res) => {
 });
 
 // GET /api/todos/activity
-router.get('/activity', (req, res) => {
+router.get('/activity', async (req, res) => {
   try {
-    res.json({ success: true, data: readActivity() });
+    const activities = (await query('SELECT * FROM activity ORDER BY timestamp DESC LIMIT 100')).rows;
+    res.json({ success: true, data: activities });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // GET /api/todos/:id
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const todo = readTodos().find(t => t.id === req.params.id);
-    if (!todo) return res.status(404).json({ success: false, error: 'Todo not found' });
-    res.json({ success: true, data: todo });
+    const result = await query('SELECT * FROM todos WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Todo not found' });
+    res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // POST /api/todos
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { title, description, priority, dueDate, tags, category, subtasks, notes, pinned, repeat } = req.body;
     if (!title?.trim()) return res.status(400).json({ success: false, error: 'Title is required' });
@@ -192,280 +195,488 @@ router.post('/', (req, res) => {
       ? reqStatus
       : (isCompleted ? 'completed' : 'todo');
 
-    const todos = readTodos();
-    const todo = {
-      id: uuidv4(),
-      title: title.trim(),
-      description: description?.trim() || '',
-      completed: isCompleted,
-      kanbanStatus: finalKanbanStatus,
-      priority: ['high', 'medium', 'low'].includes(priority) ? priority : 'medium',
-      dueDate: dueDate || null,
-      tags: Array.isArray(tags) ? tags.map(t => t.trim()).filter(Boolean) : [],
-      category: category?.trim() || 'General',
-      pinned: Boolean(pinned),
-      repeat: ['daily', 'weekly', 'monthly'].includes(repeat) ? repeat : null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      completedAt: isCompleted ? new Date().toISOString() : null,
-      subtasks: Array.isArray(subtasks) ? subtasks : [],
-      notes: notes || '',
-      timeEstimate: req.body.timeEstimate || null,
-      timeSpent: 0,
-      order: 0, // new todos go to top; reorder endpoint will fix positions
-      archived: false,
-      deletedAt: null,
-    };
+    const id = uuidv4();
+    const dbTags = Array.isArray(tags) ? tags.map(t => t.trim()).filter(Boolean) : [];
+    const dbSubtasks = Array.isArray(subtasks) ? JSON.stringify(subtasks) : JSON.stringify([]);
 
-    // Prepend & fix order indices
-    todos.unshift(todo);
-    todos.forEach((t, i) => { t.order = i; });
-    writeTodos(todos);
-    logActivity('created', todo);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Shift orders
+      await client.query('UPDATE todos SET "order" = "order" + 1');
 
-    res.status(201).json({ success: true, data: todo });
+      const insertQuery = `
+        INSERT INTO todos (
+          id, title, description, completed, "kanbanStatus", priority, "dueDate", tags, category, pinned, repeat, "completedAt", subtasks, notes, "timeEstimate", "timeSpent", "order"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0)
+        RETURNING *
+      `;
+      const values = [
+        id,
+        title.trim(),
+        description?.trim() || '',
+        isCompleted,
+        finalKanbanStatus,
+        ['high', 'medium', 'low'].includes(priority) ? priority : 'medium',
+        dueDate || null,
+        dbTags,
+        category?.trim() || 'General',
+        Boolean(pinned),
+        ['daily', 'weekly', 'monthly'].includes(repeat) ? repeat : null,
+        isCompleted ? new Date().toISOString() : null,
+        dbSubtasks,
+        notes || '',
+        req.body.timeEstimate || null,
+        0
+      ];
+
+      const newTodoRes = await client.query(insertQuery, values);
+      const todo = newTodoRes.rows[0];
+
+      // Log Activity
+      await client.query(
+        'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+        [uuidv4(), 'created', todo.id, todo.title]
+      );
+
+      await client.query('COMMIT');
+      res.status(201).json({ success: true, data: todo });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // PUT /api/todos/:id
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
-    const todos = readTodos();
-    const idx = todos.findIndex(t => t.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ success: false, error: 'Todo not found' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const existing = todos[idx];
-    const { title, description, priority, dueDate, tags, category, completed, subtasks, notes, pinned, timeEstimate, timeSpent, repeat, archived, deletedAt, kanbanStatus } = req.body;
-    if (title !== undefined && !title?.trim()) return res.status(400).json({ success: false, error: 'Title cannot be empty' });
-
-    const wasCompleted = existing.completed;
-    
-    let nowCompleted = existing.completed;
-    let finalKanbanStatus = existing.kanbanStatus || (existing.completed ? 'completed' : 'todo');
-
-    if (kanbanStatus !== undefined) {
-      finalKanbanStatus = kanbanStatus;
-      nowCompleted = kanbanStatus === 'completed';
-    } else if (completed !== undefined) {
-      nowCompleted = Boolean(completed);
-      if (nowCompleted) {
-        finalKanbanStatus = 'completed';
-      } else if (finalKanbanStatus === 'completed') {
-        finalKanbanStatus = 'todo';
+      const existingRes = await client.query('SELECT * FROM todos WHERE id = $1', [req.params.id]);
+      if (existingRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Todo not found' });
       }
+      const existing = existingRes.rows[0];
+
+      const body = req.body;
+      const title = body.title !== undefined ? body.title : existing.title;
+      if (title !== undefined && !title?.trim()) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: 'Title cannot be empty' });
+      }
+
+      const description = body.description !== undefined ? body.description : existing.description;
+      const priority = body.priority !== undefined ? body.priority : existing.priority;
+      const dueDate = body.dueDate !== undefined ? body.dueDate : existing.dueDate;
+      const tags = body.tags !== undefined ? body.tags : existing.tags;
+      const category = body.category !== undefined ? body.category : existing.category;
+      const subtasks = body.subtasks !== undefined ? body.subtasks : existing.subtasks;
+      const notes = body.notes !== undefined ? body.notes : existing.notes;
+      const pinned = body.pinned !== undefined ? Boolean(body.pinned) : existing.pinned;
+      const repeat = body.repeat !== undefined ? (['daily', 'weekly', 'monthly'].includes(body.repeat) ? body.repeat : null) : existing.repeat;
+      const timeEstimate = body.timeEstimate !== undefined ? body.timeEstimate : existing.timeEstimate;
+      const timeSpent = body.timeSpent !== undefined ? body.timeSpent : existing.timeSpent;
+      const archived = body.archived !== undefined ? Boolean(body.archived) : existing.archived;
+      const deletedAt = body.deletedAt !== undefined ? body.deletedAt : existing.deletedAt;
+      const kanbanStatusReq = body.kanbanStatus;
+      const completedReq = body.completed;
+
+      const wasCompleted = existing.completed;
+      let nowCompleted = existing.completed;
+      let finalKanbanStatus = existing.kanbanStatus || (existing.completed ? 'completed' : 'todo');
+
+      if (kanbanStatusReq !== undefined) {
+        finalKanbanStatus = kanbanStatusReq;
+        nowCompleted = kanbanStatusReq === 'completed';
+      } else if (completedReq !== undefined) {
+        nowCompleted = Boolean(completedReq);
+        if (nowCompleted) {
+          finalKanbanStatus = 'completed';
+        } else if (finalKanbanStatus === 'completed') {
+          finalKanbanStatus = 'todo';
+        }
+      }
+
+      const completedAt = !wasCompleted && nowCompleted ? new Date().toISOString() : (nowCompleted ? existing.completedAt : null);
+
+      const updateQuery = `
+        UPDATE todos SET
+          title = $1, description = $2, priority = $3, "dueDate" = $4, tags = $5, category = $6,
+          completed = $7, "kanbanStatus" = $8, subtasks = $9, notes = $10, pinned = $11, repeat = $12,
+          "timeEstimate" = $13, "timeSpent" = $14, archived = $15, "deletedAt" = $16,
+          "updatedAt" = CURRENT_TIMESTAMP, "completedAt" = $17
+        WHERE id = $18
+        RETURNING *
+      `;
+      
+      const updatedRes = await client.query(updateQuery, [
+        title.trim(),
+        description?.trim() || '',
+        priority,
+        dueDate,
+        tags,
+        category,
+        nowCompleted,
+        finalKanbanStatus,
+        JSON.stringify(subtasks),
+        notes,
+        pinned,
+        repeat,
+        timeEstimate,
+        timeSpent,
+        archived,
+        deletedAt,
+        completedAt,
+        req.params.id
+      ]);
+      const updatedTodo = updatedRes.rows[0];
+
+      // Auto-create next occurrence for recurring tasks
+      if (!wasCompleted && nowCompleted && updatedTodo.repeat) {
+        const nextId = uuidv4();
+        const nextDueDateVal = nextDueDate(updatedTodo.dueDate, updatedTodo.repeat);
+        const nextSubtasks = updatedTodo.subtasks ? updatedTodo.subtasks.map(st => ({ ...st, done: false })) : [];
+
+        await client.query('UPDATE todos SET "order" = "order" + 1');
+
+        const insertQuery = `
+          INSERT INTO todos (
+            id, title, description, completed, "kanbanStatus", priority, "dueDate", tags, category, pinned, repeat, "completedAt", subtasks, notes, "timeEstimate", "timeSpent", "order"
+          ) VALUES ($1, $2, $3, false, 'todo', $4, $5, $6, $7, $8, $9, null, $10, $11, $12, 0, 0)
+          RETURNING *
+        `;
+        const nextRes = await client.query(insertQuery, [
+          nextId,
+          updatedTodo.title,
+          updatedTodo.description,
+          updatedTodo.priority,
+          nextDueDateVal,
+          updatedTodo.tags,
+          updatedTodo.category,
+          updatedTodo.pinned,
+          updatedTodo.repeat,
+          JSON.stringify(nextSubtasks),
+          updatedTodo.notes,
+          updatedTodo.timeEstimate
+        ]);
+
+        await client.query(
+          'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+          [uuidv4(), 'created', nextRes.rows[0].id, nextRes.rows[0].title]
+        );
+      }
+
+      const action = (!wasCompleted && nowCompleted) ? 'completed' : 'updated';
+      await client.query(
+        'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+        [uuidv4(), action, updatedTodo.id, updatedTodo.title]
+      );
+
+      await client.query('COMMIT');
+      res.json({ success: true, data: updatedTodo });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-
-    const updatedTodo = {
-      ...existing,
-      title: title !== undefined ? title.trim() : existing.title,
-      description: description !== undefined ? description.trim() : existing.description,
-      priority: priority !== undefined ? priority : existing.priority,
-      dueDate: dueDate !== undefined ? dueDate : existing.dueDate,
-      tags: tags !== undefined ? tags : existing.tags,
-      category: category !== undefined ? category : existing.category,
-      completed: nowCompleted,
-      kanbanStatus: finalKanbanStatus,
-      subtasks: subtasks !== undefined ? subtasks : existing.subtasks,
-      notes: notes !== undefined ? notes : existing.notes,
-      pinned: pinned !== undefined ? Boolean(pinned) : existing.pinned,
-      repeat: repeat !== undefined ? ((['daily','weekly','monthly'].includes(repeat) ? repeat : null)) : existing.repeat,
-      timeEstimate: timeEstimate !== undefined ? timeEstimate : existing.timeEstimate,
-      timeSpent: timeSpent !== undefined ? timeSpent : existing.timeSpent,
-      archived: archived !== undefined ? Boolean(archived) : existing.archived,
-      deletedAt: deletedAt !== undefined ? deletedAt : existing.deletedAt,
-      updatedAt: new Date().toISOString(),
-      completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : (nowCompleted ? existing.completedAt : null),
-    };
-    todos[idx] = updatedTodo;
-
-    // Auto-create next occurrence for recurring tasks
-    if (!wasCompleted && nowCompleted && updatedTodo.repeat) {
-      const next = {
-        ...updatedTodo,
-        id: uuidv4(),
-        completed: false,
-        completedAt: null,
-        dueDate: nextDueDate(updatedTodo.dueDate, updatedTodo.repeat),
-        subtasks: updatedTodo.subtasks ? updatedTodo.subtasks.map(st => ({ ...st, done: false })) : undefined,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        order: -1,
-      };
-      todos.unshift(next);
-      todos.forEach((t, i) => { t.order = i; });
-      logActivity('created', next);
-    }
-
-    writeTodos(todos);
-    if (!wasCompleted && nowCompleted) logActivity('completed', updatedTodo);
-    else logActivity('updated', updatedTodo);
-
-    res.json({ success: true, data: updatedTodo });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // PATCH /api/todos/bulk
-router.patch('/bulk', (req, res) => {
+router.patch('/bulk', async (req, res) => {
   try {
     const { action, ids, value } = req.body;
     if (!Array.isArray(ids)) return res.status(400).json({ success: false, error: 'ids array required' });
-    
-    let todos = readTodos();
-    let newTodos = [];
-    todos = todos.map(t => {
-      if (!ids.includes(t.id)) return t;
-      
-      switch (action) {
-        case 'archive': return { ...t, archived: true };
-        case 'unarchive': return { ...t, archived: false };
-        case 'restore': return { ...t, deletedAt: null };
-        case 'complete': 
-          if (!t.completed && t.repeat) {
-            newTodos.push({
-              ...t,
-              id: uuidv4(),
-              completed: false,
-              completedAt: null,
-              dueDate: nextDueDate(t.dueDate, t.repeat),
-              subtasks: t.subtasks ? t.subtasks.map(st => ({ ...st, done: false })) : undefined,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              order: -1
-            });
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const id of ids) {
+        if (action === 'archive') {
+          await client.query('UPDATE todos SET archived = true WHERE id = $1', [id]);
+        } else if (action === 'unarchive') {
+          await client.query('UPDATE todos SET archived = false WHERE id = $1', [id]);
+        } else if (action === 'restore') {
+          await client.query('UPDATE todos SET "deletedAt" = null WHERE id = $1', [id]);
+        } else if (action === 'complete') {
+          const todoRes = await client.query('SELECT * FROM todos WHERE id = $1', [id]);
+          if (todoRes.rows.length > 0) {
+            const t = todoRes.rows[0];
+            if (!t.completed) {
+              await client.query('UPDATE todos SET completed = true, "completedAt" = CURRENT_TIMESTAMP, "kanbanStatus" = \'completed\' WHERE id = $1', [id]);
+              if (t.repeat) {
+                const nextId = uuidv4();
+                const nextDueDateVal = nextDueDate(t.dueDate, t.repeat);
+                const nextSubtasks = t.subtasks ? t.subtasks.map(st => ({ ...st, done: false })) : [];
+                
+                await client.query('UPDATE todos SET "order" = "order" + 1');
+                await client.query(`
+                  INSERT INTO todos (
+                    id, title, description, completed, "kanbanStatus", priority, "dueDate", tags, category, pinned, repeat, "completedAt", subtasks, notes, "timeEstimate", "timeSpent", "order"
+                  ) VALUES ($1, $2, $3, false, 'todo', $4, $5, $6, $7, $8, $9, null, $10, $11, $12, 0, 0)
+                `, [
+                  nextId, t.title, t.description, t.priority, nextDueDateVal, t.tags, t.category, t.pinned, t.repeat, JSON.stringify(nextSubtasks), t.notes, t.timeEstimate
+                ]);
+                await client.query('INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)', [
+                  uuidv4(), 'created', nextId, t.title
+                ]);
+              }
+            }
           }
-          return { ...t, completed: true, completedAt: new Date().toISOString() };
-        case 'uncomplete': return { ...t, completed: false, completedAt: null };
-        case 'priority': return { ...t, priority: value };
-        default: return t;
+        } else if (action === 'uncomplete') {
+          await client.query('UPDATE todos SET completed = false, "completedAt" = null, "kanbanStatus" = \'todo\' WHERE id = $1', [id]);
+        } else if (action === 'priority') {
+          await client.query('UPDATE todos SET priority = $1 WHERE id = $2', [value, id]);
+        }
       }
-    });
-    
-    if (newTodos.length > 0) {
-      todos.unshift(...newTodos);
-      todos.forEach((t, i) => { t.order = i; });
+
+      await client.query('COMMIT');
+      res.json({ success: true, message: `Bulk ${action} applied` });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    
-    writeTodos(todos);
-    res.json({ success: true, message: `Bulk ${action} applied` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // PATCH /api/todos/:id
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
   try {
-    const todos = readTodos();
-    const idx = todos.findIndex(t => t.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ success: false, error: 'Todo not found' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const existing = todos[idx];
-    const patch = req.body;
-    const wasCompleted = existing.completed;
-
-    let nowCompleted = existing.completed;
-    let finalKanbanStatus = existing.kanbanStatus || (existing.completed ? 'completed' : 'todo');
-
-    if (patch.kanbanStatus !== undefined) {
-      finalKanbanStatus = patch.kanbanStatus;
-      nowCompleted = patch.kanbanStatus === 'completed';
-      patch.completed = nowCompleted;
-    } else if (patch.completed !== undefined) {
-      nowCompleted = Boolean(patch.completed);
-      if (nowCompleted) {
-        finalKanbanStatus = 'completed';
-      } else if (finalKanbanStatus === 'completed') {
-        finalKanbanStatus = 'todo';
+      const existingRes = await client.query('SELECT * FROM todos WHERE id = $1', [req.params.id]);
+      if (existingRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Todo not found' });
       }
-      patch.kanbanStatus = finalKanbanStatus;
+      const existing = existingRes.rows[0];
+
+      const patch = req.body;
+      const wasCompleted = existing.completed;
+
+      let nowCompleted = existing.completed;
+      let finalKanbanStatus = existing.kanbanStatus || (existing.completed ? 'completed' : 'todo');
+
+      if (patch.kanbanStatus !== undefined) {
+        finalKanbanStatus = patch.kanbanStatus;
+        nowCompleted = patch.kanbanStatus === 'completed';
+        patch.completed = nowCompleted;
+      } else if (patch.completed !== undefined) {
+        nowCompleted = Boolean(patch.completed);
+        if (nowCompleted) {
+          finalKanbanStatus = 'completed';
+        } else if (finalKanbanStatus === 'completed') {
+          finalKanbanStatus = 'todo';
+        }
+        patch.kanbanStatus = finalKanbanStatus;
+      }
+
+      const completedAt = !wasCompleted && nowCompleted ? new Date().toISOString() : (nowCompleted ? existing.completedAt : null);
+
+      // Build dynamic patch query
+      const keys = Object.keys(patch).filter(k => k !== 'id');
+      const setClauses = [];
+      const values = [];
+      
+      keys.forEach((key, index) => {
+        let val = patch[key];
+        if (key === 'subtasks' && Array.isArray(val)) {
+          val = JSON.stringify(val);
+        }
+        values.push(val);
+        setClauses.push(`"${key}" = $${values.length}`);
+      });
+
+      // Also set completed, kanbanStatus, completedAt, and updatedAt
+      values.push(nowCompleted);
+      setClauses.push(`completed = $${values.length}`);
+      
+      values.push(finalKanbanStatus);
+      setClauses.push(`"kanbanStatus" = $${values.length}`);
+
+      values.push(completedAt);
+      setClauses.push(`"completedAt" = $${values.length}`);
+
+      setClauses.push(`"updatedAt" = CURRENT_TIMESTAMP`);
+
+      values.push(req.params.id);
+      const updateQuery = `
+        UPDATE todos SET ${setClauses.join(', ')}
+        WHERE id = $${values.length}
+        RETURNING *
+      `;
+
+      const updatedRes = await client.query(updateQuery, values);
+      const updatedTodo = updatedRes.rows[0];
+
+      // Auto-create next occurrence for recurring tasks
+      if (!wasCompleted && nowCompleted && updatedTodo.repeat) {
+        const nextId = uuidv4();
+        const nextDueDateVal = nextDueDate(updatedTodo.dueDate, updatedTodo.repeat);
+        const nextSubtasks = updatedTodo.subtasks ? updatedTodo.subtasks.map(st => ({ ...st, done: false })) : [];
+
+        await client.query('UPDATE todos SET "order" = "order" + 1');
+
+        const insertQuery = `
+          INSERT INTO todos (
+            id, title, description, completed, "kanbanStatus", priority, "dueDate", tags, category, pinned, repeat, "completedAt", subtasks, notes, "timeEstimate", "timeSpent", "order"
+          ) VALUES ($1, $2, $3, false, 'todo', $4, $5, $6, $7, $8, $9, null, $10, $11, $12, 0, 0)
+          RETURNING *
+        `;
+        const nextRes = await client.query(insertQuery, [
+          nextId,
+          updatedTodo.title,
+          updatedTodo.description,
+          updatedTodo.priority,
+          nextDueDateVal,
+          updatedTodo.tags,
+          updatedTodo.category,
+          updatedTodo.pinned,
+          updatedTodo.repeat,
+          JSON.stringify(nextSubtasks),
+          updatedTodo.notes,
+          updatedTodo.timeEstimate
+        ]);
+
+        await client.query(
+          'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+          [uuidv4(), 'created', nextRes.rows[0].id, nextRes.rows[0].title]
+        );
+      }
+
+      if (!wasCompleted && nowCompleted) {
+        await client.query(
+          'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+          [uuidv4(), 'completed', updatedTodo.id, updatedTodo.title]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.json({ success: true, data: updatedTodo });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-
-    const updatedTodo = {
-      ...existing,
-      ...patch,
-      completed: nowCompleted,
-      kanbanStatus: finalKanbanStatus,
-      updatedAt: new Date().toISOString(),
-      completedAt: !wasCompleted && nowCompleted ? new Date().toISOString() : (nowCompleted ? existing.completedAt : null),
-    };
-    todos[idx] = updatedTodo;
-
-    // Auto-create next occurrence for recurring tasks
-    if (!wasCompleted && nowCompleted && updatedTodo.repeat) {
-      const next = {
-        ...updatedTodo,
-        id: uuidv4(),
-        completed: false,
-        completedAt: null,
-        dueDate: nextDueDate(updatedTodo.dueDate, updatedTodo.repeat),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        order: -1,
-      };
-      todos.unshift(next);
-      todos.forEach((t, i) => { t.order = i; });
-      logActivity('created', next);
-    }
-
-    writeTodos(todos);
-    if (!wasCompleted && nowCompleted) logActivity('completed', updatedTodo);
-
-    res.json({ success: true, data: updatedTodo });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // DELETE /api/todos/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const todos = readTodos();
-    const idx = todos.findIndex(t => t.id === req.params.id);
-    if (idx === -1) return res.json({ success: true, message: 'Todo already deleted' });
-    
-    if (!todos[idx].deletedAt) {
-      // Soft delete
-      todos[idx].deletedAt = new Date().toISOString();
-      logActivity('deleted', todos[idx]);
-    } else {
-      // Hard delete
-      const [deleted] = todos.splice(idx, 1);
-      logActivity('permanently_deleted', deleted);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const todoRes = await client.query('SELECT * FROM todos WHERE id = $1', [req.params.id]);
+      if (todoRes.rows.length === 0) {
+        await client.query('COMMIT');
+        return res.json({ success: true, message: 'Todo already deleted' });
+      }
+      const todo = todoRes.rows[0];
+
+      if (!todo.deletedAt) {
+        // Soft delete
+        await client.query('UPDATE todos SET "deletedAt" = CURRENT_TIMESTAMP WHERE id = $1', [req.params.id]);
+        await client.query(
+          'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+          [uuidv4(), 'deleted', todo.id, todo.title]
+        );
+      } else {
+        // Hard delete
+        await client.query('DELETE FROM todos WHERE id = $1', [req.params.id]);
+        await client.query(
+          'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+          [uuidv4(), 'permanently_deleted', todo.id, todo.title]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.json({ success: true, message: 'Todo deleted' });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    writeTodos(todos);
-    res.json({ success: true, message: 'Todo deleted' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // DELETE /api/todos — bulk
-router.delete('/', (req, res) => {
+router.delete('/', async (req, res) => {
   try {
     const { ids } = req.body;
-    let todos = readTodos();
-    if (Array.isArray(ids)) {
-      todos = todos.map(t => {
-        if (ids.includes(t.id)) {
-          if (!t.deletedAt) return { ...t, deletedAt: new Date().toISOString() };
-          return null; // mark for hard delete
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (Array.isArray(ids)) {
+        for (const id of ids) {
+          const todoRes = await client.query('SELECT * FROM todos WHERE id = $1', [id]);
+          if (todoRes.rows.length > 0) {
+            const todo = todoRes.rows[0];
+            if (!todo.deletedAt) {
+              await client.query('UPDATE todos SET "deletedAt" = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+              await client.query(
+                'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+                [uuidv4(), 'deleted', todo.id, todo.title]
+              );
+            } else {
+              await client.query('DELETE FROM todos WHERE id = $1', [id]);
+              await client.query(
+                'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+                [uuidv4(), 'permanently_deleted', todo.id, todo.title]
+              );
+            }
+          }
         }
-        return t;
-      }).filter(Boolean); // removes the hard-deleted ones
-    } else {
-      // clear completed (soft delete)
-      todos = todos.map(t => (t.completed && !t.deletedAt) ? { ...t, deletedAt: new Date().toISOString() } : t);
+      } else {
+        // Clear completed (soft delete completed todos)
+        const completedRes = await client.query('SELECT * FROM todos WHERE completed = true AND "deletedAt" IS NULL');
+        for (const todo of completedRes.rows) {
+          await client.query('UPDATE todos SET "deletedAt" = CURRENT_TIMESTAMP WHERE id = $1', [todo.id]);
+          await client.query(
+            'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+            [uuidv4(), 'deleted', todo.id, todo.title]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json({ success: true, message: 'Todos deleted' });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    writeTodos(todos);
-    res.json({ success: true, message: 'Todos deleted' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
 
 module.exports = router;
