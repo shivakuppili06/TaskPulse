@@ -2,36 +2,37 @@
    ROOT VARIABLES
 ═══════════════════════════════ */
 :root {
-  --bg: #f1f5f9;
-  --bg-card: #ffffff;
-  --bg-hover: #f8fafc;
-  --bg-input: #ffffff;
-  --border: #cbd5e1;
-  --border-focus: #6366f1;
-  --text: #0f172a;
-  --text-muted: #475569;
-  --text-dim: #64748b;
-  --accent: #6366f1;
-  --accent-soft: rgba(99, 102, 241, 0.08);
-  --accent-hover: #4f46e5;
+  --bg: #0b0f19; /* Royal Midnight Navy background */
+  --bg-card: #121826; /* Deep blue-slate card background */
+  --bg-hover: #1e2638; /* Soft navy-grey hover background */
+  --bg-input: #151d30; /* Input background */
+  --border: #202b42; /* Soft blue-grey border */
+  --border-focus: #3b82f6; /* Vivid royal blue focus border */
+  --text: #f8fafc; /* Crisp light slate text */
+  --text-muted: #cbd5e1; /* Muted light slate text */
+  --text-dim: #94a3b8; /* Dimmed slate text */
+  --accent: #3b82f6; /* Vivid royal blue accent */
+  --accent-soft: rgba(59, 130, 246, 0.15);
+  --accent-hover: #2563eb;
   --high: #ef4444;
-  --high-soft: rgba(239, 68, 68, 0.08);
+  --high-soft: rgba(239, 68, 68, 0.15);
   --medium: #f59e0b;
-  --medium-soft: rgba(245, 158, 11, 0.08);
+  --medium-soft: rgba(245, 158, 11, 0.15);
   --low: #10b981;
-  --low-soft: rgba(16, 185, 129, 0.08);
+  --low-soft: rgba(16, 185, 129, 0.15);
   --success: #10b981;
-  --success-soft: rgba(16, 185, 129, 0.08);
+  --success-soft: rgba(16, 185, 129, 0.15);
   --danger: #ef4444;
   --pin: #d97706;
   --radius: 12px;
   --radius-sm: 8px;
   --radius-lg: 20px;
-  --shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.1), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
   --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --skeleton-base: #e2e8f0;
-  --skeleton-shine: #f1f5f9;
+  --skeleton-base: #1e293b;
+  --skeleton-shine: #334155;
+  --color-scheme: dark;
 
   /* Typography scale */
   --fs-xs: 11px;
@@ -50,6 +51,36 @@
   --sp-5: 20px;
   --sp-6: 24px;
   --sp-8: 32px;
+}
+
+[data-theme="light"] {
+  --bg: #FAF9F6; /* Brighter ivory cream background, extremely clean and good for eyes */
+  --bg-card: #FFFFFF; /* Crisp white card background */
+  --bg-hover: #F5F3EC; /* Very light warm beige hover */
+  --bg-input: #FFFFFF; /* White input background */
+  --border: #EDEAE0; /* Soft light beige/grey border */
+  --border-focus: #B87A5C; /* Warm coppery bronze focus border */
+  --text: #2C2824; /* Soft dark warm charcoal text, much easier on the eyes than pure black */
+  --text-muted: #5C554E; /* Muted warm charcoal text */
+  --text-dim: #8C847C; /* Dimmed warm grey text */
+  --accent: #B87A5C; /* Coppery bronze accent, perfectly fits the bright cream design system */
+  --accent-soft: rgba(184, 122, 92, 0.08);
+  --accent-hover: #9E5B3D;
+  --high: #BD4B4B; /* Muted warm red for high priority */
+  --high-soft: rgba(189, 75, 75, 0.08);
+  --medium: #C28938; /* Warm ochre for medium priority */
+  --medium-soft: rgba(194, 137, 56, 0.08);
+  --low: #5C8C67; /* Soft sage/olive green for low priority */
+  --low-soft: rgba(92, 140, 103, 0.08);
+  --success: #5C8C67;
+  --success-soft: rgba(92, 140, 103, 0.08);
+  --danger: #BD4B4B;
+  --pin: #C28938;
+  --shadow: 0 10px 15px -3px rgba(44, 40, 36, 0.04), 0 4px 6px -2px rgba(44, 40, 36, 0.02);
+  --shadow-sm: 0 1px 3px rgba(44, 40, 36, 0.06), 0 1px 2px rgba(44, 40, 36, 0.03);
+  --skeleton-base: #F3EFE6;
+  --skeleton-shine: #FAF9F6;
+  --color-scheme: light;
 }
 
 /* ═══════════════════════════════
@@ -168,8 +199,8 @@ kbd {
   background: var(--bg-card);
   color: var(--text);
 }
-[data-theme="light"] input[type="date"] {
-  color-scheme: light;
+input[type="date"] {
+  color-scheme: var(--color-scheme);
 }
 
 /* ═══════════════════════════════

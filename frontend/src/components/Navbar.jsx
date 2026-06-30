@@ -11,7 +11,7 @@ export default function Navbar() {
       <div className={styles.inner}>
         <Link to="/" className={styles.brand}>
           <span className={styles.logo}>⬡</span>
-          <span className={styles.brandName}>todoapp</span>
+          <span className={styles.brandName}>ApexTask</span>
         </Link>
         <nav className={styles.nav}>
           <Link to="/" className={`${styles.link} ${pathname === '/' && !new URLSearchParams(window.location.search).get('status') ? styles.active : ''}`}>

@@ -139,13 +139,17 @@ router.post('/reorder', async (req, res) => {
 // GET /api/todos/stats
 router.get('/stats', async (req, res) => {
   try {
-    const active = (await query('SELECT COUNT(*) FROM todos WHERE completed = false AND archived = false AND "deletedAt" IS NULL')).rows[0].count;
-    const completed = (await query('SELECT COUNT(*) FROM todos WHERE completed = true AND archived = false AND "deletedAt" IS NULL')).rows[0].count;
-    const archived = (await query('SELECT COUNT(*) FROM todos WHERE archived = true AND "deletedAt" IS NULL')).rows[0].count;
-    const deleted = (await query('SELECT COUNT(*) FROM todos WHERE "deletedAt" IS NOT NULL')).rows[0].count;
-
-    const activeCount = parseInt(active);
-    const completedCount = parseInt(completed);
+    const result = await query(`
+      SELECT 
+        COUNT(*) FILTER (WHERE completed = false AND archived = false AND "deletedAt" IS NULL) as active,
+        COUNT(*) FILTER (WHERE completed = true AND archived = false AND "deletedAt" IS NULL) as completed,
+        COUNT(*) FILTER (WHERE archived = true AND "deletedAt" IS NULL) as archived,
+        COUNT(*) FILTER (WHERE "deletedAt" IS NOT NULL) as deleted
+      FROM todos
+    `);
+    const stats = result.rows[0];
+    const activeCount = parseInt(stats.active || 0);
+    const completedCount = parseInt(stats.completed || 0);
 
     res.json({
       success: true,
@@ -153,10 +157,39 @@ router.get('/stats', async (req, res) => {
         total: activeCount + completedCount,
         active: activeCount,
         completed: completedCount,
-        archived: parseInt(archived),
-        deleted: parseInt(deleted)
+        archived: parseInt(stats.archived || 0),
+        deleted: parseInt(stats.deleted || 0)
       }
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/todos/trash — permanently delete all soft-deleted todos
+router.delete('/trash', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const deletedRes = await client.query('SELECT * FROM todos WHERE "deletedAt" IS NOT NULL');
+      for (const todo of deletedRes.rows) {
+        await client.query('DELETE FROM todos WHERE id = $1', [todo.id]);
+        await client.query(
+          'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+          [uuidv4(), 'permanently_deleted', todo.id, todo.title]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.json({ success: true, message: 'Trash emptied', data: { count: deletedRes.rows.length } });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -440,6 +473,24 @@ router.patch('/bulk', async (req, res) => {
           await client.query('UPDATE todos SET completed = false, "completedAt" = null, "kanbanStatus" = \'todo\' WHERE id = $1', [id]);
         } else if (action === 'priority') {
           await client.query('UPDATE todos SET priority = $1 WHERE id = $2', [value, id]);
+        } else if (action === 'delete') {
+          const todoRes = await client.query('SELECT * FROM todos WHERE id = $1', [id]);
+          if (todoRes.rows.length > 0) {
+            const todo = todoRes.rows[0];
+            if (!todo.deletedAt) {
+              await client.query('UPDATE todos SET "deletedAt" = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+              await client.query(
+                'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+                [uuidv4(), 'deleted', todo.id, todo.title]
+              );
+            } else {
+              await client.query('DELETE FROM todos WHERE id = $1', [id]);
+              await client.query(
+                'INSERT INTO activity (id, action, "todoId", "todoTitle", timestamp) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)',
+                [uuidv4(), 'permanently_deleted', todo.id, todo.title]
+              );
+            }
+          }
         }
       }
 
@@ -492,12 +543,13 @@ router.patch('/:id', async (req, res) => {
 
       const completedAt = !wasCompleted && nowCompleted ? new Date().toISOString() : (nowCompleted ? existing.completedAt : null);
 
-      // Build dynamic patch query
-      const keys = Object.keys(patch).filter(k => k !== 'id');
+      // Build dynamic patch query (exclude fields handled explicitly below)
+      const reserved = new Set(['id', 'completed', 'kanbanStatus', 'completedAt']);
+      const keys = Object.keys(patch).filter(k => !reserved.has(k));
       const setClauses = [];
       const values = [];
       
-      keys.forEach((key, index) => {
+      keys.forEach((key) => {
         let val = patch[key];
         if (key === 'subtasks' && Array.isArray(val)) {
           val = JSON.stringify(val);
@@ -506,7 +558,6 @@ router.patch('/:id', async (req, res) => {
         setClauses.push(`"${key}" = $${values.length}`);
       });
 
-      // Also set completed, kanbanStatus, completedAt, and updatedAt
       values.push(nowCompleted);
       setClauses.push(`completed = $${values.length}`);
       
@@ -578,6 +629,16 @@ router.patch('/:id', async (req, res) => {
     } finally {
       client.release();
     }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/todos/trash — permanently delete soft-deleted todos
+router.delete('/trash', async (req, res) => {
+  try {
+    await query('DELETE FROM todos WHERE "deletedAt" IS NOT NULL');
+    res.json({ success: true, message: 'Trash emptied' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

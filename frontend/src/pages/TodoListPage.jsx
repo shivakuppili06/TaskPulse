@@ -29,7 +29,8 @@ import {
   Archive, 
   RefreshCw, 
   Eye,
-  CheckSquare
+  CheckSquare,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../api.js';
 import TodoItem from '../components/TodoItem.jsx';
@@ -193,7 +194,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
     }
   }
 
-  async function handleToggle(id, completed) {
+   async function handleToggle(id, completed) {
     const prev = todos.find(t => t.id === id);
     const updatedTodos = todos.map(x => x.id === id ? { ...x, completed } : x);
     setTodos(updatedTodos);
@@ -206,6 +207,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
       }
       toast(completed ? 'Task completed! 🎉' : 'Marked as active', 'success');
       if (completed) maybeConfetti(updatedTodos);
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (e) {
       setTodos(t => t.map(x => x.id === id ? prev : x));
       toast(e.message, 'error');
@@ -223,6 +225,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
     try {
       await api.delete(id);
       toast(isHardDelete ? 'Task permanently deleted' : 'Task moved to Trash', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (err) {
       setTodos(oldTodos);
       toast(err.message, 'error');
@@ -235,6 +238,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
       await api.bulkAction('restore', [todo.id]);
       setTodos(prev => prev.filter(t => t.id !== todo.id));
       toast('Task restored', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -273,6 +277,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
       await api.bulkAction(updatedArchived ? 'archive' : 'unarchive', [todo.id]);
       setTodos(prev => prev.filter(t => t.id !== todo.id));
       toast(updatedArchived ? 'Task archived' : 'Task unarchived', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -301,6 +306,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
       if (colId === 'completed') {
         confetti({ particleCount: 80, spread: 60, origin: { y: 0.8 } });
       }
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (err) {
       setTodos(oldTodos);
       toast(`Failed to move task: ${err.message}`, 'error');
@@ -322,6 +328,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
       toast('Task created', 'success');
       setInlineTitle('');
       setInlineColId(null);
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -369,6 +376,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
       setSelected(new Set());
       fetchTodos();
       toast(`Bulk ${action} successful`, 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -376,9 +384,10 @@ export default function TodoListPage({ mode = 'tasks' }) {
 
   async function handleClearCompleted() {
     try {
-      await api.bulkAction('delete', todos.filter(t => t.completed && !t.deletedAt).map(t => t.id));
+      await api.clearCompleted();
       fetchTodos();
       toast('Completed tasks cleared', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -390,6 +399,7 @@ export default function TodoListPage({ mode = 'tasks' }) {
       await api.emptyTrash();
       setTodos([]);
       toast('Trash emptied', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -496,9 +506,22 @@ export default function TodoListPage({ mode = 'tasks' }) {
       {/* Header */}
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>My Tasks</h1>
+          <h1 className={styles.title}>
+            {mode === 'archive' ? 'Archive' : mode === 'deleted' ? 'Trash' : 'My Tasks'}
+          </h1>
           <div className={styles.headerMeta}>
-            <span className={styles.statChip}>{activeCount} active</span>
+            {mode === 'archive' ? (
+              <span className={styles.statChip}>{todos.length} archived</span>
+            ) : mode === 'deleted' ? (
+              <span className={styles.statChip}>{todos.length} in trash</span>
+            ) : (
+              <>
+                <span className={styles.statChip}>{activeCount} active</span>
+                {completedCount > 0 && (
+                  <span className={styles.statChip}>{completedCount} completed</span>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -680,24 +703,29 @@ export default function TodoListPage({ mode = 'tasks' }) {
                               </button>
 
                               {activeMenuId === todo.id && (
-                                <div ref={menuRef} className={styles.dropdownMenu}>
-                                  <button onClick={() => navigate(`/todo?id=${todo.id}`)}><Eye size={12} style={{ marginRight: '8px' }} /> View Details</button>
+                                <div 
+                                  ref={menuRef} 
+                                  className={styles.dropdownMenu}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button onClick={(e) => { e.stopPropagation(); navigate(`/todo?id=${todo.id}`); }}><Eye size={12} style={{ marginRight: '8px' }} /> View Details</button>
                                   {status === 'deleted' ? (
                                     <>
-                                      <button onClick={() => handleRestore(todo)}><RotateCcw size={12} style={{ marginRight: '8px' }} /> Restore</button>
-                                      <button onClick={() => handleDelete(todo.id, true)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete Permanently</button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleRestore(todo); }}><RotateCcw size={12} style={{ marginRight: '8px' }} /> Restore</button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleDelete(todo.id, true); }} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete Permanently</button>
                                     </>
                                   ) : status === 'archived' ? (
                                     <>
-                                      <button onClick={() => handleArchive(todo)}><Archive size={12} style={{ marginRight: '8px' }} /> Unarchive</button>
-                                      <button onClick={() => handleDelete(todo.id, false)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleArchive(todo); }}><Archive size={12} style={{ marginRight: '8px' }} /> Unarchive</button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleDelete(todo.id, false); }} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
                                     </>
                                   ) : (
                                     <>
-                                      <button onClick={() => { setEditingTodo(todo); setShowModal(true); }}><Edit3 size={12} style={{ marginRight: '8px' }} /> Edit Task</button>
-                                      <button onClick={() => handleDuplicate(todo)}><Copy size={12} style={{ marginRight: '8px' }} /> Duplicate</button>
-                                      <button onClick={() => handleArchive(todo)}><Archive size={12} style={{ marginRight: '8px' }} /> Archive</button>
-                                      <button onClick={() => handleDelete(todo.id, false)} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
+                                      <button onClick={(e) => { e.stopPropagation(); setEditingTodo(todo); setShowModal(true); }}><Edit3 size={12} style={{ marginRight: '8px' }} /> Edit Task</button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleDuplicate(todo); }}><Copy size={12} style={{ marginRight: '8px' }} /> Duplicate</button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleArchive(todo); }}><Archive size={12} style={{ marginRight: '8px' }} /> Archive</button>
+                                      <button onClick={(e) => { e.stopPropagation(); handleDelete(todo.id, false); }} className={styles.deleteOption}><Trash2 size={12} style={{ marginRight: '8px' }} /> Delete</button>
                                     </>
                                   )}
                                 </div>

@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:5000/api/todos';
+const BASE = import.meta.env.VITE_API_URL || '/api/todos';
 
 async function request(url, options = {}) {
   const res = await fetch(url, {
@@ -31,6 +31,7 @@ export const api = {
   deleteMany: (ids) => request(BASE, { method: 'DELETE', body: JSON.stringify({ ids }) }),
   bulkAction: (action, ids, value) => request(`${BASE}/bulk`, { method: 'PATCH', body: JSON.stringify({ action, ids, value }) }),
   clearCompleted: () => request(BASE, { method: 'DELETE', body: JSON.stringify({}) }),
+  emptyTrash: () => request(`${BASE}/trash`, { method: 'DELETE' }),
   reorder: (ids) => request(`${BASE}/reorder`, { method: 'POST', body: JSON.stringify({ ids }) }),
   getActivity: () => request(`${BASE}/activity`),
   getStats: () => request(`${BASE}/stats`),

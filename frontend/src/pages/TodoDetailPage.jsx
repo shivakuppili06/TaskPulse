@@ -63,6 +63,7 @@ export default function TodoDetailPage() {
       });
       setTodo(res.data);
       toast(isCompleted ? 'Task completed! 🎉' : 'Marked as active', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -78,6 +79,7 @@ export default function TodoDetailPage() {
     try {
       await api.delete(id);
       toast(isHardDelete ? 'Task permanently deleted' : 'Task moved to Trash', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
       navigate('/');
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -86,6 +88,7 @@ export default function TodoDetailPage() {
     try {
       await api.bulkAction('restore', [id]);
       toast('Task restored', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
       navigate('/');
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -95,6 +98,7 @@ export default function TodoDetailPage() {
     try {
       await api.bulkAction(updatedArchived ? 'archive' : 'unarchive', [id]);
       toast(updatedArchived ? 'Task archived' : 'Task unarchived', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
       navigate('/');
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -105,6 +109,7 @@ export default function TodoDetailPage() {
       setTodo(res.data);
       setShowModal(false);
       toast('Task updated', 'success');
+      window.dispatchEvent(new CustomEvent('task-stats-changed'));
     } catch (e) {
       toast(e.message, 'error');
     }

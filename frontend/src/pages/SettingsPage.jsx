@@ -18,7 +18,7 @@ export default function SettingsPage() {
       <header className={styles.header}>
         <div className={styles.headerTitle}>
           <h1>Settings</h1>
-          <p>Configure and manage your Taska workspace.</p>
+          <p>Configure and manage your ApexTask workspace.</p>
         </div>
       </header>
 

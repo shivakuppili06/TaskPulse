@@ -56,7 +56,13 @@ async function initDb() {
       );
     `);
 
-    console.log('✓ Database tables initialized successfully');
+    // Create performance indexes
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_todos_deleted_archived ON todos ("deletedAt", archived);
+      CREATE INDEX IF NOT EXISTS idx_todos_order_created ON todos ("order" ASC, "createdAt" DESC);
+    `);
+
+    console.log('✓ Database tables and performance indexes initialized successfully');
   } catch (err) {
     console.error('❌ Error initializing database:', err);
     throw err;
