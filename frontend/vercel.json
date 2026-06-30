@@ -1,9 +1,6 @@
 {
-  "cleanUrls": true,
-  "rewrites": [
-    { "source": "/assets/:path*", "destination": "/assets/:path*" },
-    { "source": "/favicon.ico", "destination": "/favicon.ico" },
-    { "source": "/vite.svg", "destination": "/vite.svg" },
-    { "source": "/:path*", "destination": "/index.html" }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
