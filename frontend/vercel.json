@@ -1,6 +1,9 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/((?!assets/|vite.svg|favicon.ico).*)", "destination": "/index.html" }
+    { "source": "/assets/:path*", "destination": "/assets/:path*" },
+    { "source": "/favicon.ico", "destination": "/favicon.ico" },
+    { "source": "/vite.svg", "destination": "/vite.svg" },
+    { "source": "/:path*", "destination": "/index.html" }
   ]
 }
