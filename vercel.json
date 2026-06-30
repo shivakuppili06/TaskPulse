@@ -4,6 +4,6 @@
   "installCommand": "npm install && npm install --prefix frontend",
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!assets/|vite.svg|favicon.ico).*)", "destination": "/index.html" }
   ]
 }
